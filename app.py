@@ -8,70 +8,86 @@ import io
 # -----------------------------------------------------------------------------
 st.set_page_config(page_title="BMS Sendika Veri Temizleyici", layout="wide")
 
-st.title("?? Sendika Kesinti Listesi Duzenleyici")
+st.title("📂 Sendika Kesinti Listesi Düzenleyici")
 st.markdown("""
-Bu arac, karma??k CSV/Excel c?kt?lar?n? temizler. 
-**11 haneli TC Kimlik Numaras?n?** referans alarak sat?rdaki kaymalar? otomatik duzeltir.
+Bu araç, karmaşık CSV/Excel çıktılarını temizler. 
+**11 haneli TC Kimlik Numarasını** referans alarak satırdaki kaymaları otomatik düzeltir.
 """)
 
 # -----------------------------------------------------------------------------
-# 2. VER? TEM?ZLEME FONKS?YONU
+# YARDIMCI FONKSİYON: BOZUK KARAKTERLERİ DÜZELT
 # -----------------------------------------------------------------------------
-def clean_and_parse_data_v2(file_content):
+def fix_turkish_chars(text):
+    """
+    Eğer metin bozuk gelirse (Örn: 'Ã¼' yerine 'ü', 'Ý' yerine 'İ') bunları düzeltir.
+    """
+    if not isinstance(text, str):
+        return text
+    
+    # Yaygın encoding hataları haritası
+    replacements = {
+        'Ã¼': 'ü', 'Ã¶': 'ö', 'Ã§': 'ç', 'ÅŸ': 'ş', 'Ä±': 'ı', 'ÄŸ': 'ğ',
+        'Ãœ': 'Ü', 'Ã–': 'Ö', 'Ã‡': 'Ç', 'Åž': 'Ş', 'Ä°': 'İ', 'Äž': 'Ğ',
+        'Ý': 'İ', 'Þ': 'Ş', 'ð': 'ğ', 'ý': 'ı', 'þ': 'ş', 'Ð': 'Ğ'
+    }
+    
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    return text
+
+# -----------------------------------------------------------------------------
+# 2. VERİ TEMİZLEME FONKSİYONU
+# -----------------------------------------------------------------------------
+def clean_and_parse_data_v3(file_content):
     data_rows = []
     
-    # Sat?rlara bol
     lines = file_content.splitlines()
     
     for line in lines:
-        # 1. Ad?m: Sat?rda 11 haneli bir TC Kimlik var m??
+        # TC Kimlik bul (11 hane)
         tc_match = re.search(r'(?<!\d)\d{11}(?!\d)', line)
         
         if tc_match:
             try:
                 tc_value = tc_match.group(0)
                 
-                # 2. Ad?m: Sat?r? noktal? virgul veya virgulden ay?r
-                # Oncelik noktal? virgulde (Excelden donu?tururken bunu kullanaca??z)
+                # Ayırıcıyı belirle (Noktalı virgül öncelikli)
                 if ";" in line:
                     parts = line.split(';')
                 else:
                     parts = line.split(',')
                 
-                # 3. Ad?m: Bo?luklar? temizle ve sadece DOLU verileri al
+                # Temizle
                 clean_parts = [p.strip() for p in parts if p.strip()]
                 
-                # TC Kimlik Numaras?n?n konumunu bul
+                # TC index bul
                 try:
                     tc_index = clean_parts.index(tc_value)
                 except ValueError:
                     continue 
 
-                # 4. Ad?m: Verileri Ata (TC Konumuna Gore)
+                # --- VERİ ATAMA ---
                 
-                # --- TUTAR DUZELTME KISMI (BURASI GUNCELLEND?) ---
+                # Tutar (Temizlenmiş)
                 tutar = "0"
                 if len(clean_parts) > tc_index + 1:
                     raw_tutar = clean_parts[tc_index + 1]
-                    
-                    # T?rnak i?aretlerini temizle ("293" -> 293)
-                    raw_tutar = raw_tutar.replace('"', '').replace("'", "")
-                    
-                    # Virgulu noktaya cevir (254,14 -> 254.14) ki Excel say? sans?n
-                    tutar = raw_tutar.replace(',', '.')
-                # -------------------------------------------------
+                    raw_tutar = raw_tutar.replace('"', '').replace("'", "") # Tırnak sil
+                    tutar = raw_tutar.replace(',', '.') # Virgülü nokta yap
                 
-                # Soyad?
+                # Soyadı
                 soyadi = ""
                 if tc_index > 0:
                     soyadi = clean_parts[tc_index - 1]
+                    soyadi = fix_turkish_chars(soyadi) # Türkçe karakter düzelt
                 
-                # Ad?
+                # Adı
                 adi = ""
                 if tc_index > 1:
                     adi = clean_parts[tc_index - 2]
+                    adi = fix_turkish_chars(adi) # Türkçe karakter düzelt
                 
-                # Uye No
+                # Üye No
                 uye_no = ""
                 if tc_index > 2:
                     uye_no = clean_parts[tc_index - 3]
@@ -79,34 +95,32 @@ def clean_and_parse_data_v2(file_content):
                     uye_no = clean_parts[0] if tc_index > 0 else ""
 
                 row_dict = {
-                    "Uye No": uye_no,
-                    "Ad?": adi,
-                    "Soyad?": soyadi,
+                    "Üye No": uye_no,
+                    "Adı": adi,
+                    "Soyadı": soyadi,
                     "TC Kimlik No": tc_value,
-                    "Aidat Tutar?": tutar
+                    "Aidat Tutarı": tutar
                 }
                 data_rows.append(row_dict)
                 
             except Exception as e:
-                print(f"Sat?r hatas?: {e}")
                 continue
 
-    # DataFrame olu?tur ve Tutar? Say?ya Cevir
+    # DataFrame oluştur
     df = pd.read_json(io.StringIO(pd.DataFrame(data_rows).to_json(orient='records')))
     
-    # Son olarak Aidat Tutar?n? float (say?) yapmaya cal??, olmuyorsa string kals?n
+    # Tutarı sayıya çevir
     try:
-        df["Aidat Tutar?"] = pd.to_numeric(df["Aidat Tutar?"])
+        df["Aidat Tutarı"] = pd.to_numeric(df["Aidat Tutarı"])
     except:
         pass
 
     return df
 
 # -----------------------------------------------------------------------------
-# 3. ARAYUZ VE DOSYA YUKLEME
+# 3. ARAYÜZ VE DOSYA YÜKLEME
 # -----------------------------------------------------------------------------
-
-uploaded_file = st.file_uploader("Dosyay? Yukle", type=["csv", "xlsx", "txt", "xls"])
+uploaded_file = st.file_uploader("Dosyayı Yükle", type=["csv", "xlsx", "txt", "xls"])
 
 if uploaded_file is not None:
     st.info("Dosya analiz ediliyor...")
@@ -114,56 +128,70 @@ if uploaded_file is not None:
     string_data = ""
     
     try:
-        # Excel dosyalar? (xlsx veya xls)
+        # Excel Okuma
         if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
             try:
                 # Excel'i oku
                 df_temp = pd.read_excel(uploaded_file, header=None, dtype=str)
-                
-                # --- KR?T?K DUZELTME ---
-                # CSV'ye cevirirken ay?r?c?y? noktal? virgul (;) yap?yoruz.
-                # Boylece say? icindeki virguller (254,14) sutunlar? bolmez.
+                # CSV stringe çevir (noktalı virgül ile)
                 string_data = df_temp.to_csv(index=False, header=False, sep=';')
-                
             except Exception as excel_error:
-                st.error(f"Excel dosyas? okunamad?: {excel_error}")
+                st.error(f"Excel hatası: {excel_error}")
         
-        # Metin tabanl? dosyalar
+        # Metin Okuma (Encoding Denemeleri)
         else:
             raw_bytes = uploaded_file.getvalue()
+            # 1. Öncelik: Türkçe Windows (Excel CSV'leri genelde budur)
             try:
                 string_data = raw_bytes.decode("cp1254")
             except UnicodeDecodeError:
+                # 2. Öncelik: UTF-8
                 try:
                     string_data = raw_bytes.decode("utf-8")
                 except UnicodeDecodeError:
-                    string_data = raw_bytes.decode("latin-1")
+                    # 3. Öncelik: ISO-8859-9 (Alternatif Türkçe)
+                    try:
+                        string_data = raw_bytes.decode("iso-8859-9")
+                    except UnicodeDecodeError:
+                         string_data = raw_bytes.decode("latin-1")
         
-        # --- Temizleme Fonksiyonunu Cal??t?r ---
+        # Temizle ve Göster
         if string_data:
-            df_clean = clean_and_parse_data_v2(string_data)
+            df_clean = clean_and_parse_data_v3(string_data)
             
             if not df_clean.empty:
-                st.success(f"Ba?ar?l?! Toplam {len(df_clean)} ki?i listelendi.")
-                
+                st.success(f"Başarılı! Toplam {len(df_clean)} kişi listelendi.")
                 st.dataframe(df_clean)
                 
+                # Excel İndir
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     df_clean.to_excel(writer, index=False, sheet_name='Temiz Liste')
+                    workbook = writer.book
                     worksheet = writer.sheets['Temiz Liste']
+                    
+                    # Başlık Formatı (Kalın ve Renkli)
+                    header_format = workbook.add_format({
+                        'bold': True,
+                        'text_wrap': True,
+                        'valign': 'top',
+                        'fg_color': '#D7E4BC',
+                        'border': 1
+                    })
+                    
+                    for col_num, value in enumerate(df_clean.columns.values):
+                        worksheet.write(0, col_num, value, header_format)
+                        
                     worksheet.set_column('A:E', 20)
 
                 st.download_button(
-                    label="?? Temizlenmi? Excel Olarak ?ndir",
+                    label="📥 Temiz Excel İndir",
                     data=buffer,
-                    file_name="BMS_Sendika_Temiz_Liste.xlsx",
+                    file_name="BMS_Sendika_Temiz.xlsx",
                     mime="application/vnd.ms-excel"
                 )
             else:
-                st.error("Veri bulunamad?. ?cerikte 11 haneli TC Kimlik No oldu?undan emin olun.")
-                st.text("Okunan veri orne?i:")
-                st.text(string_data[:500])
-
+                st.error("TC Kimlik No bulunamadı.")
+                
     except Exception as e:
-        st.error(f"Beklenmeyen bir hata olu?tu: {e}")
+        st.error(f"Beklenmeyen hata: {e}")
