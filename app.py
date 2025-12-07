@@ -1,58 +1,65 @@
-from flask import Flask, render_template_string
+import streamlit as st
 import pandas as pd
 
-app = Flask(__name__)
+st.set_page_config(
+    page_title="Uye Aidat Listesi",
+    layout="wide"
+)
 
-EXCEL_PATH = "BMS SEND?KA KADROLU a?ustos 2025.xlsx"
+st.title("?? Uye Aidat Bilgileri (Tek Sayfa)")
 
-@app.route("/")
-def index():
-    # Excel oku
-    df = pd.read_excel(EXCEL_PATH)
+uploaded_file = st.file_uploader(
+    "Excel dosyas?n? yukleyin (.xlsx / .xls)",
+    type=["xlsx", "xls"]
+)
 
-    # Kolon e?le?tirme (farkl? yaz?mlara toleransl?)
-    column_map = {}
+if uploaded_file:
+    try:
+        df = pd.read_excel(uploaded_file)
 
-    for col in df.columns:
-        key = col.lower().strip()
+        # Kolonlar? normalize et
+        df.columns = [
+            str(c).strip().lower()
+            for c in df.columns
+        ]
 
-        if "uye" in key and "no" in key:
-            column_map[col] = "Uye No"
-        elif "ad" in key or "soyad" in key:
-            column_map[col] = "Ad Soyad"
-        elif "tc" in key:
-            column_map[col] = "TC"
-        elif "aidat" in key:
-            column_map[col] = "Aidat"
+        def find_col(keywords):
+            for c in df.columns:
+                if any(k in c for k in keywords):
+                    return c
+            return None
 
-    # Yaln?zca gerekli kolonlar
-    df = df[list(column_map.keys())]
-    df = df.rename(columns=column_map)
+        col_uye = find_col(["uye", "uye", "sicil", "no"])
+        col_ad = find_col(["ad", "ad?", "isim"])
+        col_soyad = find_col(["soyad", "soyad?"])
+        col_tc = find_col(["tc", "tckn", "kimlik"])
+        col_aidat = find_col(["aidat", "tutar", "kesinti"])
 
-    # S?ra no ekle
-    df.insert(0, "S?ra No", range(1, len(df) + 1))
+        result = pd.DataFrame()
 
-    html = """
-    <!doctype html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Aidat Listesi</title>
-        <style>
-            body { font-family: Arial; padding: 20px; }
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-            th { background: #f4f4f4; }
-        </style>
-    </head>
-    <body>
-        <h2>Aidat Listesi</h2>
-        {{ table | safe }}
-    </body>
-    </html>
-    """
+        if col_uye:
+            result["Uye No"] = df[col_uye]
+        if col_ad:
+            result["Ad"] = df[col_ad]
+        if col_soyad:
+            result["Soyad"] = df[col_soyad]
+        if col_tc:
+            result["TC Kimlik No"] = df[col_tc]
+        if col_aidat:
+            result["Aidat Tutar?"] = df[col_aidat]
 
-    return render_template_string(html, table=df.to_html(index=False))
+        result = result.dropna(how="all")
+        result.insert(0, "S?ra No", range(1, len(result) + 1))
 
-if __name__ == "__main__":
-    app.run(debug=True)
+        st.success("? Veriler ba?ar?yla al?nd?")
+        st.dataframe(result, use_container_width=True)
+
+        st.download_button(
+            "?? Excel olarak indir",
+            data=result.to_excel(index=False),
+            file_name="uye_aidat_listesi.xlsx"
+        )
+
+    except Exception as e:
+        st.error("? Dosya okunurken hata olu?tu")
+        st.text(str(e))
