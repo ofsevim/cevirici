@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
+from io import BytesIO
 
 st.set_page_config(
     page_title="Uye Aidat Listesi",
     layout="wide"
 )
 
-st.title("?? Uye Aidat Bilgileri (Tek Sayfa)")
+st.title("?? Uye Aidat Bilgileri")
 
 uploaded_file = st.file_uploader(
     "Excel dosyas?n? yukleyin (.xlsx / .xls)",
@@ -17,11 +18,8 @@ if uploaded_file:
     try:
         df = pd.read_excel(uploaded_file)
 
-        # Kolonlar? normalize et
-        df.columns = [
-            str(c).strip().lower()
-            for c in df.columns
-        ]
+        # Kolon adlar?n? normalize et
+        df.columns = [str(c).strip().lower() for c in df.columns]
 
         def find_col(keywords):
             for c in df.columns:
@@ -54,12 +52,19 @@ if uploaded_file:
         st.success("? Veriler ba?ar?yla al?nd?")
         st.dataframe(result, use_container_width=True)
 
+        # ===== EXCEL DOWNLOAD (DO?RU YOL) =====
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            result.to_excel(writer, index=False, sheet_name="AidatListesi")
+        buffer.seek(0)
+
         st.download_button(
-            "?? Excel olarak indir",
-            data=result.to_excel(index=False),
-            file_name="uye_aidat_listesi.xlsx"
+            label="?? Excel olarak indir",
+            data=buffer,
+            file_name="uye_aidat_listesi.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
     except Exception as e:
         st.error("? Dosya okunurken hata olu?tu")
-        st.text(str(e))
+        st.exception(e)
