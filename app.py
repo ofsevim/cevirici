@@ -6,7 +6,7 @@ import io
 # -----------------------------------------------------------------------------
 # 1. SAYFA AYARLARI
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="BMS Sendika Veri Temizleyici", layout="wide")
+st.set_page_config(page_title="Veri Temizleyici", layout="wide")
 
 st.title("📂 Sendika Kesinti Listesi Düzenleyici")
 st.markdown("""
