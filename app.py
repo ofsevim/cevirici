@@ -1,215 +1,163 @@
 import streamlit as st
 import pandas as pd
-import io
 import re
+import io
 
-# ------------------ SAYFA AYARLARI ------------------
-st.set_page_config(page_title="Rontgen Modu", page_icon="??", layout="wide")
-st.title("?? Dosya Rontgeni")
-st.markdown("Sutunlar?n harflerini (A, B, C) ve verinin hangi sat?rda bulundu?unu gosterir.")
+# Sayfa Ayarlar?
+st.set_page_config(page_title="BMS Sendika Veri Temizleyici", layout="wide")
 
-# ------------------ YARDIMCI FONKS?YONLAR ------------------
-@st.cache_data
-def load_data_safely(file):
-    try:
-        if file.name.lower().endswith(('.xlsx', '.xls')):
-            return pd.read_excel(file, header=None), None
-        
-        file.seek(0)
-        encodings = ["utf-8", "cp1254", "latin1", "iso-8859-9"]
-        for enc in encodings:
-            try:
-                file.seek(0)
-                return pd.read_csv(file, header=None, encoding=enc, sep=None, engine='python'), None
-            except: continue
-        return None, "Dosya format? desteklenmiyor."
-    except Exception as e:
-        return None, str(e)
+st.title("?? Sendika Kesinti Listesi Duzenleyici")
+st.markdown("""
+Bu arac, **Buro Memurlar? Sendikas?** karma??k CSV/Excel c?kt?lar?n? temizleyip
+tek ve duzgun bir Excel tablosuna donu?turur.
+""")
 
-def get_excel_col_name(n):
-    """0 -> A, 1 -> B, 26 -> AA cevirimi yapar"""
-    string = ""
-    n += 1 # 1-based adjustment
-    while n > 0:
-        n, remainder = divmod(n - 1, 26)
-        string = chr(65 + remainder) + string
-    return string
-
-def clean_tc(val):
-    try:
-        if pd.isna(val): return None
-        s = str(val)
-        if isinstance(val, float) or '.' in s:
-            try: s = str(int(float(s)))
-            except: pass
-        digits = re.sub(r"\D", "", s)
-        return digits if len(digits) == 11 and digits[0] != "0" else None
-    except: return None
-
-def clean_money(val):
-    if pd.isna(val): return 0.0
-    s = str(val).replace("?", "").replace("TL", "").replace(" ", "")
-    if "," in s and "." in s: s = s.replace(".", "")
-    s = s.replace(",", ".")
-    try: return float(s)
-    except: return 0.0
-
-def get_detailed_options(df, show_all):
+def clean_and_parse_data(file_content):
     """
-    Hem Sutun Indexini, Hem Excel Harfini, Hem de Ornek Veriyi ve Yerini gosterir.
+    Veriyi sat?r sat?r okur, TC Kimlik No (11 hane) iceren sat?rlar? yakalar
+    ve virgullerden ar?nd?rarak temiz bir liste olu?turur.
     """
-    options = ["Seciniz..."]
-    mapping = {}
+    data_rows = []
     
-    for col_idx in df.columns:
-        # Excel Harfi (0=A, 1=B...)
-        col_letter = get_excel_col_name(col_idx)
+    # Dosya iceri?ini sat?rlara bol
+    lines = file_content.split('\n')
+    
+    for line in lines:
+        # Sat?rda 11 haneli bir say? var m? kontrol et (TC Kimlik No)
+        # Regex: \d{11} -> Yan yana 11 rakam arar
+        tc_match = re.search(r'\b\d{11}\b', line)
         
-        # Sutun Verisi
-        series = df[col_idx]
-        
-        # Tamamen bo? mu?
-        if series.isna().all():
-            if show_all:
-                label = f"[{col_idx}] Sutun {col_letter} ?? (TAMAMEN BO?)"
-                options.append(label)
-                mapping[label] = col_idx
-            continue
-
-        # Dolu verileri al
-        valid_series = series.dropna().astype(str)
-        valid_series = valid_series[valid_series.str.strip() != ""] # Bo?luklar? at
-        
-        # ?cinde "nan", "0" gibi ?eyler varsa ele (ama kullan?c? istiyorsa goster)
-        trash_list = ['nan', 'none', '0', '0.0', '.', '-', '_']
-        meaningful_data = valid_series[~valid_series.str.lower().isin(trash_list)]
-        
-        if meaningful_data.empty:
-            if show_all:
-                label = f"[{col_idx}] Sutun {col_letter} ?? (Sadece Cop Veri Var)"
-                options.append(label)
-                mapping[label] = col_idx
-            continue
-
-        # Ornek Veri Bul
-        sample_val = "Bulunamad?"
-        found_row = -1
-        
-        # ?lk anlaml? veriyi bul (Ba?l?k olmayan)
-        for idx, val in meaningful_data.items():
-            v_lower = val.lower()
-            if v_lower not in ["s?ra", "no", "ad?", "soyad?", "tc", "kimlik", "tutar", "aidat", "uye"]:
-                sample_val = val
-                found_row = idx + 1 # Excel sat?r numaras? (1-based)
-                break
-        
-        # E?er hepsi ba?l?ksa ilkini al
-        if found_row == -1:
-            sample_val = meaningful_data.iloc[0]
-            found_row = meaningful_data.index[0] + 1
-
-        # Etiketi Haz?rla
-        if len(sample_val) > 15: sample_val = sample_val[:12] + "..."
-        
-        # Format: [2] Sutun C ?? "Ahmet" (Sat?r 5)
-        label = f"[{col_idx}] Sutun {col_letter} ?? \"{sample_val}\" (Sat?r {found_row})"
-        
-        options.append(label)
-        mapping[label] = col_idx
-        
-    return options, mapping
-
-# ------------------ ANA AKI? ------------------
-# Yan menu ayar?
-with st.sidebar:
-    st.header("Ayarlar")
-    show_all_cols = st.checkbox("Butun Sutunlar? Goster (Bo?lar Dahil)", value=False)
-    st.info("E?er arad???n?z sutunu listede bulam?yorsan?z yukar?daki kutuyu i?aretleyin.")
-
-uploaded_file = st.file_uploader("Dosya Yukle", type=["xlsx", "xls", "csv"])
-
-if uploaded_file:
-    df, error = load_data_safely(uploaded_file)
-
-    if error:
-        st.error(f"Hata: {error}")
-    elif df is not None:
-        
-        # --- 1. ON?ZLEME ---
-        with st.expander("?? Dosya Onizlemesi (Geni?let)", expanded=True):
-            st.dataframe(df.head(50), use_container_width=True)
-            st.caption("Not: Tablodaki 0, 1, 2... ba?l?klar? Python indeksidir. A, B, C harfleri a?a??da yazar.")
-        
-        # --- 2. SECENEKLER ---
-        col_options, col_map = get_detailed_options(df, show_all_cols)
-        
-        if len(col_options) == 1:
-            st.warning("Gorunurde dolu sutun yok. Yan menuden 'Butun Sutunlar? Goster'i secmeyi deneyin.")
-        else:
-            st.success(f"Toplam {len(col_options)-1} adet veri iceren sutun listelendi.")
+        if tc_match:
+            # Sat?r? virgullerden ay?r
+            parts = line.split(',')
             
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.markdown("##### 1. Zorunlu")
-                sel_tc = st.selectbox("TC Kimlik No", col_options)
-                sel_aidat = st.selectbox("Aidat Tutar?", col_options)
+            # Bo?luklar? ve bo? stringleri temizle
+            cleaned_parts = [p.strip() for p in parts if p.strip()]
             
-            with c2:
-                st.markdown("##### 2. ?sim")
-                sel_ad = st.selectbox("Ad?", col_options)
-                sel_soyad = st.selectbox("Soyad?", col_options)
-                
-            with c3:
-                st.markdown("##### 3. Opsiyonel")
-                sel_uye = st.selectbox("Uye No", col_options)
-
-            st.divider()
-
-            # --- 3. ??LEM ---
-            if st.button("L?STEY? OLU?TUR ??", type="primary"):
-                if "Seciniz" in [sel_tc, sel_aidat, sel_ad, sel_soyad]:
-                    st.warning("Lutfen TC, Aidat, Ad ve Soyad seciniz.")
-                else:
-                    try:
-                        out = pd.DataFrame()
+            # Temizlenmi? listede en az 5 eleman olmal? (S?ra, UyeNo, Ad, Soyad, TC, Tutar)
+            # Bazen S?ra No olmayabilir, bu yuzden esnek davranaca??z.
+            if len(cleaned_parts) >= 4:
+                try:
+                    # Strateji: TC Kimlik Numaras?n? bul ve di?erlerini ona gore konumland?r.
+                    # Listede TC'nin indexini bul
+                    tc_value = tc_match.group(0)
+                    
+                    # Listede TC de?erinin tam olarak hangi indexte oldu?unu bulal?m
+                    # Bazen TC string icinde ba?ta/sonda bo?lukla gelebilir, match ile garantiye alal?m.
+                    tc_index = -1
+                    for i, part in enumerate(cleaned_parts):
+                        if part == tc_value:
+                            tc_index = i
+                            break
+                    
+                    if tc_index != -1:
+                        # Tutar: TC'den hemen sonraki elemand?r.
+                        tutar = cleaned_parts[tc_index + 1] if (tc_index + 1) < len(cleaned_parts) else "0"
                         
-                        out["TC Kimlik No"] = df[col_map[sel_tc]]
-                        out["Aidat Tutar?"] = df[col_map[sel_aidat]]
-                        out["Ad?"] = df[col_map[sel_ad]]
-                        out["Soyad?"] = df[col_map[sel_soyad]]
+                        # Soyad?: TC'den hemen onceki elemand?r.
+                        soyadi = cleaned_parts[tc_index - 1]
                         
-                        if sel_uye != "Seciniz...":
-                            out["Uye No"] = df[col_map[sel_uye]]
-                        else:
-                            out["Uye No"] = ""
-
-                        # Temizlik
-                        out["TC Kimlik No"] = out["TC Kimlik No"].apply(clean_tc)
-                        out = out.dropna(subset=["TC Kimlik No"])
+                        # Ad?: Soyad?ndan onceki elemand?r. 
+                        # Ancak bazen "?ki ?simli" ki?iler olabilir. 
+                        # Uye No ile Soyad? aras?ndaki her ?ey "AD"d?r.
                         
-                        out["Aidat Tutar?"] = out["Aidat Tutar?"].apply(clean_money)
+                        # Uye No: Genellikle en ba?taki de?il, ondan sonraki say?d?r (En ba? SIRA NO'dur).
+                        # Ancak bazen SIRA NO okunmaz.
+                        # Genellikle TC indexinden geriye do?ru 3. veya 4. eleman Uye No'dur.
                         
-                        if not out.empty:
-                            out["Uye No"] = out["Uye No"].astype(str).str.split(".").str[0].replace("nan", "")
-
-                        out.insert(0, "S?ra No", range(1, len(out) + 1))
-
-                        if out.empty:
-                            st.error("Kay?t bulunamad?. Secti?iniz sutunlar?n do?ru oldu?undan emin misiniz?")
-                        else:
-                            st.success(f"? {len(out)} kay?t bulundu.")
-                            st.dataframe(out, use_container_width=True)
-
-                            buffer = io.BytesIO()
-                            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-                                out.to_excel(writer, index=False)
+                        # Basit mant?k: 
+                        # cleaned_parts genelde ?oyledir: ['1', '287676', 'Seyhan', 'Abca', '25250132516', '325.51']
+                        # Index:            0 (S?ra)   1 (Uye)    2 (Ad)    3 (Soyad) 4 (TC)        5 (Tutar)
+                        
+                        uye_no = cleaned_parts[tc_index - 3] if (tc_index - 3) >= 0 else cleaned_parts[0]
+                        
+                        # ?sim bulma mant???: Uye No indexi ile Soyad? indexi aras?ndakileri birle?tir
+                        uye_no_index = -1
+                        # Uye nosunu bulmaya cal??al?m (TC'den once say?sal olan ilk de?er de?il, soyad?ndan once gelen isimlerden onceki say?)
+                        # Manuel indexleme daha guvenli bu format icin:
+                        
+                        # Senaryo 1: S?ra No VAR
+                        if tc_index >= 4: 
+                            uye_no = cleaned_parts[1] # Genelde 1. index
+                            # Ad, index 2'den Soyad indexine kadar olan k?s?md?r
+                            adi_list = cleaned_parts[2 : tc_index - 1] 
+                            adi = " ".join(adi_list)
                             
-                            st.download_button(
-                                "?? ?ndir",
-                                buffer.getvalue(),
-                                "Net_Liste.xlsx",
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
+                        # Senaryo 2: S?ra No YOK veya hatal? parse edildi
+                        elif tc_index == 3: # ['UyeNo', 'Ad', 'Soyad', 'TC', 'Tutar']
+                            uye_no = cleaned_parts[0]
+                            adi = cleaned_parts[1]
+                        
+                        else:
+                            # Cok istisnai durum, manuel atama deneyelim
+                            uye_no = cleaned_parts[1] if len(cleaned_parts) > 1 else ""
+                            adi = "Bilinmiyor"
 
-                    except Exception as e:
-                        st.error(f"Hata: {e}")
+                        # Veriyi kaydet
+                        row_dict = {
+                            "Uye No": uye_no,
+                            "Ad?": adi,
+                            "Soyad?": soyadi,
+                            "TC Kimlik No": tc_value,
+                            "Aidat Tutar?": tutar
+                        }
+                        data_rows.append(row_dict)
+                except Exception as e:
+                    # Hatal? sat?r olursa atla ama konsola bas
+                    print(f"Hata olu?an sat?r: {cleaned_parts} - Hata: {e}")
+                    continue
+
+    return pd.DataFrame(data_rows)
+
+# --- Streamlit Arayuzu ---
+
+uploaded_file = st.file_uploader("Dosyay? Yukle (CSV veya Excel)", type=["csv", "xlsx", "txt"])
+
+if uploaded_file is not None:
+    st.info("Dosya i?leniyor...")
+    
+    # Dosya turune gore okuma
+    string_data = ""
+    
+    try:
+        if uploaded_file.name.endswith('.csv') or uploaded_file.name.endswith('.txt'):
+            # Byte'? stringe cevir (utf-8 tr karakter deste?i icin onemli)
+            string_data = uploaded_file.getvalue().decode("utf-8")
+        elif uploaded_file.name.endswith('.xlsx'):
+            # Excel ise once pandas ile okuyup csv string format?na cevirelim ki parser cal??s?n
+            df_temp = pd.read_excel(uploaded_file)
+            string_data = df_temp.to_csv(index=False)
+            
+        # Temizleme Fonksiyonunu Cal??t?r
+        df_clean = clean_and_parse_data(string_data)
+        
+        if not df_clean.empty:
+            st.success(f"??lem Tamamland?! Toplam {len(df_clean)} ki?i bulundu.")
+            
+            # Tabloyu goster
+            st.dataframe(df_clean)
+            
+            # ?ndirme Butonu (Excel olarak)
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df_clean.to_excel(writer, index=False, sheet_name='Sendika Listesi')
+                
+                # Sutun geni?liklerini ayarla (Opsiyonel estetik)
+                worksheet = writer.sheets['Sendika Listesi']
+                worksheet.set_column('A:A', 15) # Uye No
+                worksheet.set_column('B:C', 20) # Ad Soyad
+                worksheet.set_column('D:D', 15) # TC
+                worksheet.set_column('E:E', 15) # Tutar
+
+            st.download_button(
+                label="?? Temizlenmi? Excel'i ?ndir",
+                data=buffer,
+                file_name="BMS_Sendika_Temiz_Liste.xlsx",
+                mime="application/vnd.ms-excel"
+            )
+        else:
+            st.error("Veri bulunamad? veya format cok bozuk.")
+            
+    except Exception as e:
+        st.error(f"Bir hata olu?tu: {e}")
+        st.warning("Lutfen dosyan?n CSV format?nda oldu?undan veya Excel ise okunabilir oldu?undan emin olun.")
