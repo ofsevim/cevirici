@@ -3,37 +3,30 @@ import pandas as pd
 import io
 import re
 
-# Sayfa Ayarları
-st.set_page_config(page_title="Akıllı Sendika Listesi", page_icon="🧠")
+# Sayfa Ayarlar?
+st.set_page_config(page_title="Ak?ll? Sendika Listesi", page_icon="??", layout="wide")
 
-st.title("🧠 Yapay Zeka Destekli Liste Düzenleyici")
-st.write("Dosyanızı yükleyin. Sütunların yeri nerede olursa olsun otomatik bulur.")
+st.title("?? Yapay Zeka Destekli Liste Duzenleyici")
+st.markdown("""
+Dosyan?z? yukleyin. Sutunlar? otomatik bulur. 
+**E?er Ad ve Soyad kar???rsa, sol menudeki 'Ad/Soyad Yer De?i?tir' kutusunu kullan?n.**
+""")
 
-uploaded_file = st.file_uploader("Dosyanızı buraya bırakın", type=["xls", "xlsx", "csv"])
+# --- YAN MENU ---
+st.sidebar.header("Ayarlar")
+swap_names = st.sidebar.checkbox("Ad ve Soyad? Yer De?i?tir", value=False, help="E?er listede Ad yerine Soyad, Soyad yerine Ad goruyorsan?z bunu i?aretleyin.")
 
-# --- YARDIMCI FONKSİYONLAR ---
-def is_tc(val):
-    """Bir değerin TC Kimlik No olup olmadığını kontrol eder."""
-    s = str(val).split('.')[0].strip()
-    return s.isdigit() and len(s) == 11 and s[0] != '0'
+uploaded_file = st.file_uploader("Excel veya CSV dosyan?z? buraya b?rak?n", type=["xls", "xlsx", "csv"])
 
-def is_money(val):
-    """Bir değerin para birimi olup olmadığını kontrol eder."""
-    s = str(val).replace('TL', '').replace(' ', '').strip()
-    # 123,45 veya 123.45 formatı
-    if re.match(r'^\d+([.,]\d{1,2})?$', s):
-        return True
-    return False
+# --- YARDIMCI ANAL?Z FONKS?YONLARI ---
 
-def is_sira_no(val):
-    """Sıra numarası gibi ardışık küçük sayı mı?"""
+def is_tc_potential(val):
     try:
-        n = int(float(str(val)))
-        return 0 < n < 10000
-    except:
-        return False
+        s = str(val).split('.')[0].strip()
+        return s.isdigit() and len(s) == 11 and s[0] != '0'
+    except: return False
 
-def clean_money(x):
+def clean_money_value(x):
     if pd.isna(x): return 0.0
     x = str(x).replace('TL', '').replace(' ', '')
     if ',' in x and '.' in x: x = x.replace('.', '') 
@@ -41,189 +34,194 @@ def clean_money(x):
     try: return float(x)
     except: return 0.0
 
-def clean_text(x):
-    return str(x).split('.')[0].strip() if pd.notna(x) else ""
-
-def analyze_and_map_columns(df):
+def find_header_row(df):
     """
-    DataFrame içindeki sütunları analiz eder ve hangisinin ne olduğuna karar verir.
-    Puanlama sistemi kullanır.
+    ?lk 20 sat?r? tarar ve icinde 'Ad?', 'Soyad?', 'TC' gecen ba?l?k sat?r?n? arar.
+    Varsa o sat?r?n indeksini ve sutun yerlerini dondurur.
     """
-    column_scores = {
-        'Sira No': {},
-        'TC Kimlik No': {},
-        'Aidat Tutari': {},
-        'Adi': {},
-        'Soyadi': {},
-        'Uye No': {}
-    }
-    
-    # Sadece anlamlı (boş olmayan) satırlara bak
-    # Rastgele 20 satırı örnekle (Hız için)
-    sample_df = df.dropna(thresh=2).sample(n=min(30, len(df)), random_state=42)
-    
-    for col in df.columns:
-        # Sütundaki verileri analiz et
-        tc_score = 0
-        money_score = 0
-        sira_score = 0
-        text_score = 0
+    for i in range(min(20, len(df))):
+        row_vals = [str(v).lower() for v in df.iloc[i].values]
         
-        valid_count = 0
-        for val in sample_df[col]:
-            if pd.isna(val): continue
+        # Anahtar kelimeler o sat?rda var m??
+        has_ad = any(x in ['ad?', 'ad', 'isim', 'personel ad?'] for x in row_vals)
+        has_soyad = any(x in ['soyad?', 'soyad', 'soyisim'] for x in row_vals)
+        has_tc = any('tc' in x or 'kimlik' in x for x in row_vals)
+        
+        if has_ad and has_soyad and has_tc:
+            # Ba?l?k sat?r? bulundu! Sutun indekslerini c?karal?m.
+            mapping = {}
+            for col_idx, val in enumerate(df.iloc[i]):
+                val_str = str(val).lower()
+                if val_str in ['ad?', 'ad', 'isim']: mapping['Adi'] = df.columns[col_idx]
+                elif val_str in ['soyad?', 'soyad']: mapping['Soyadi'] = df.columns[col_idx]
+                elif 'kimlik' in val_str or 'tc' in val_str: mapping['TC Kimlik No'] = df.columns[col_idx]
+                elif 'aidat' in val_str or 'tutar' in val_str: mapping['Aidat Tutari'] = df.columns[col_idx]
+                elif 'uye' in val_str and 'no' in val_str: mapping['Uye No'] = df.columns[col_idx]
+            return mapping
+            
+    return None
+
+def analyze_columns_content(df):
+    """
+    E?er ba?l?k yoksa iceri?e bakarak tahmin eder.
+    """
+    sample_rows = df.dropna(thresh=2).sample(n=min(50, len(df)), random_state=42).reset_index(drop=True)
+    
+    scores = {'TC': {}, 'Aidat': {}, 'Text': {}, 'UyeNo': {}}
+    cols = df.columns
+    
+    for col in cols:
+        tc_hits = 0; money_hits = 0; text_hits = 0; uyeno_hits = 0; valid_count = 0
+        
+        for val in sample_rows[col]:
+            if pd.isna(val) or str(val).strip() == "": continue
             valid_count += 1
             
-            if is_tc(val): tc_score += 1
-            if is_money(val) and not is_tc(val) and not is_sira_no(val): money_score += 1
-            if is_sira_no(val): sira_score += 1
-            if isinstance(val, str) and not any(c.isdigit() for c in val): text_score += 1
-        
-        if valid_count == 0: continue
-        
-        # Puanları oranla
-        column_scores['TC Kimlik No'][col] = tc_score / valid_count
-        column_scores['Aidat Tutari'][col] = money_score / valid_count
-        column_scores['Sira No'][col] = sira_score / valid_count
-        # İsim ve Soyad için metin yoğunluğuna bakacağız ama TC olmayan metinler
-        column_scores['Adi'][col] = text_score / valid_count
-        
-    # --- EŞLEŞTİRME (EN YÜKSEK PUANLARI AL) ---
+            if is_tc_potential(val): tc_hits += 1
+            
+            s_val = str(val).split('.')[0]
+            if s_val.isdigit() and 3 < len(s_val) < 8: uyeno_hits += 1
+
+            # Para kontrolu (TC ve Uye No de?ilse ve icinde say? varsa)
+            s_clean = str(val).replace('TL', '').replace('.', '').replace(',', '')
+            if not is_tc_potential(val) and len(s_clean) < 10 and any(c.isdigit() for c in str(val)):
+                if ',' in str(val) or '.' in str(val): money_hits += 1
+                
+            # Metin kontrolu (?cinde say? yoksa)
+            s_text = str(val).strip()
+            if not any(char.isdigit() for char in s_text) and len(s_text) > 1:
+                text_hits += 1
+
+        if valid_count > 0:
+            scores['TC'][col] = tc_hits / valid_count
+            scores['Aidat'][col] = money_hits / valid_count
+            scores['Text'][col] = text_hits / valid_count
+            scores['UyeNo'][col] = uyeno_hits / valid_count
+
+    # --- EN ?Y? SUTUNLARI SEC ---
     mapping = {}
     used_cols = set()
 
-    # 1. Önce en belirgin olanları bul: TC ve Aidat
-    for field in ['TC Kimlik No', 'Aidat Tutari', 'Sira No']:
-        best_col = max(column_scores[field], key=column_scores[field].get, default=None)
-        if best_col is not None and column_scores[field][best_col] > 0.4: # %40 eşleşme eşiği
-            mapping[field] = best_col
-            used_cols.add(best_col)
-
-    # 2. İsim ve Soyadı Bulma (Biraz daha karmaşık)
-    # Genellikle İsim sütunu Soyad'dan önce gelir veya yan yanadır.
-    # Metin puanı yüksek olan ve henüz kullanılmamış sütunları al.
-    potential_text_cols = sorted(
-        [c for c in column_scores['Adi'] if c not in used_cols and column_scores['Adi'][c] > 0.5],
-        key=lambda x: x # İndex sırasına göre kalsın
-    )
+    # 1. TC Kimlik No
+    tc_col = max(scores['TC'], key=scores['TC'].get, default=None)
+    if tc_col is not None and scores['TC'][tc_col] > 0.3:
+        mapping['TC Kimlik No'] = tc_col
+        used_cols.add(tc_col)
     
+    # 2. Aidat
+    filtered_aidat = {k:v for k,v in scores['Aidat'].items() if k not in used_cols}
+    aidat_col = max(filtered_aidat, key=filtered_aidat.get, default=None)
+    if aidat_col is not None:
+        mapping['Aidat Tutari'] = aidat_col
+        used_cols.add(aidat_col)
+
+    # 3. Ad ve Soyad (Metin sutunlar?)
+    potential_text_cols = sorted(
+        [c for c in scores['Text'] if c not in used_cols and scores['Text'][c] > 0.4],
+        key=lambda x: x # ?ndeks s?ras?na gore (Genelde Ad solda, Soyad sa?da olur)
+    )
+
     if len(potential_text_cols) >= 2:
         mapping['Adi'] = potential_text_cols[0]
         mapping['Soyadi'] = potential_text_cols[1]
-        used_cols.add(potential_text_cols[0])
-        used_cols.add(potential_text_cols[1])
     elif len(potential_text_cols) == 1:
         mapping['Adi'] = potential_text_cols[0]
-        # Soyadı bulunamadıysa Adı sütununu kopyala veya boş bırak
-        mapping['Soyadi'] = None 
+        mapping['Soyadi'] = None
 
-    # 3. Üye No (Genellikle Sıra No ile Adı arasında kalan sayıdır)
-    # Bu zor bir alan, basitçe kalan sayısal sütunlardan birini seçelim
-    # Veya spesifik bir mantık: 4-6 haneli sayılar
-    uye_no_candidates = []
-    for col in df.columns:
-        if col in used_cols: continue
-        score = 0
-        count = 0
-        for val in sample_df[col]:
-            if pd.isna(val): continue
-            s = str(val).split('.')[0]
-            if s.isdigit() and 3 < len(s) < 8: # 4-7 haneli sayılar genelde üye nosudur
-                score += 1
-            count += 1
-        if count > 0 and (score / count) > 0.5:
-            uye_no_candidates.append(col)
-            
-    if uye_no_candidates:
-        mapping['Uye No'] = uye_no_candidates[0]
-    else:
-        mapping['Uye No'] = None
-
+    # 4. Uye No
+    filtered_uyeno = {k:v for k,v in scores['UyeNo'].items() if k not in used_cols}
+    uye_col = max(filtered_uyeno, key=filtered_uyeno.get, default=None)
+    if uye_col is not None and scores['UyeNo'][uye_col] > 0.2:
+         mapping['Uye No'] = uye_col
+    
     return mapping
 
-
-def process_file(file):
-    # --- OKUMA ---
+def process_file(file, swap_names_flag):
+    # Dosya okuma
     df = None
     file_name = file.name.lower()
     try:
-        if file_name.endswith('.xlsx'):
-            df = pd.read_excel(file, header=None, engine='openpyxl')
-        elif file_name.endswith('.xls'):
-            try:
-                df = pd.read_excel(file, header=None, engine='xlrd')
-            except:
-                dfs = pd.read_html(file)
-                if dfs: df = dfs[0]
-        
-        if df is None: # CSV veya Text dene
+        if file_name.endswith('.xlsx'): df = pd.read_excel(file, header=None, engine='openpyxl')
+        elif file_name.endswith('.xls'): 
+            try: df = pd.read_excel(file, header=None, engine='xlrd')
+            except: pass
+        if df is None:
             file.seek(0)
-            for enc in ['utf-8', 'cp1254', 'latin1']:
-                try:
-                    file.seek(0)
-                    df = pd.read_csv(file, header=None, encoding=enc, sep=None, engine='python')
-                    break
+            for encoding in ['utf-8', 'cp1254', 'latin1']:
+                try: df = pd.read_csv(file, header=None, encoding=encoding, sep=None, engine='python'); break
                 except: continue
-                
-        if df is None: return None, "Dosya okunamadı."
+        if df is None: return None, "Dosya okunamad?."
+    except Exception as e: return None, f"Okuma hatas?: {e}"
+
+    # Analiz Ba?lat (Once Ba?l?k Ara, Yoksa ?ceri?e Bak)
+    mapping = find_header_row(df)
+    
+    if mapping is None or 'TC Kimlik No' not in mapping:
+        mapping = analyze_columns_content(df)
         
-    except Exception as e: return None, str(e)
+    if 'TC Kimlik No' not in mapping or 'Aidat Tutari' not in mapping:
+        return None, "TC Kimlik veya Aidat sutunu tespit edilemedi."
 
-    # --- ANALİZ VE HARİTALAMA ---
-    try:
-        mapping = analyze_and_map_columns(df)
-        
-        # Eğer kritik alanlar (TC, Aidat) bulunamadıysa hata ver
-        if 'TC Kimlik No' not in mapping or 'Aidat Tutari' not in mapping:
-            return None, "Otomatik analiz başarısız oldu. Dosyada TC Kimlik veya Aidat sütunu tespit edilemedi."
-            
-        # Yeni DataFrame oluştur
-        new_df = pd.DataFrame()
-        
-        if 'Sira No' in mapping:
-            new_df['Sira No'] = df[mapping['Sira No']]
-        else:
-            new_df['Sira No'] = range(1, len(df) + 1) # Sıra no yoksa oluştur
+    # Yeni tabloyu olu?tur
+    new_df = pd.DataFrame()
+    new_df['Sira No'] = range(1, len(df) + 1)
+    
+    # E?le?meleri ata
+    new_df['Uye No'] = df[mapping['Uye No']] if mapping.get('Uye No') is not None else ""
+    new_df['TC Kimlik No'] = df[mapping['TC Kimlik No']]
+    new_df['Aidat Tutari'] = df[mapping['Aidat Tutari']]
 
-        new_df['Uye No'] = df[mapping['Uye No']] if mapping.get('Uye No') is not None else ""
-        new_df['Adi'] = df[mapping['Adi']] if mapping.get('Adi') is not None else ""
-        new_df['Soyadi'] = df[mapping['Soyadi']] if mapping.get('Soyadi') is not None else ""
-        new_df['TC Kimlik No'] = df[mapping['TC Kimlik No']]
-        new_df['Aidat Tutari'] = df[mapping['Aidat Tutari']]
+    # AD SOYAD MANTI?I (Swap Kontrolu Burada)
+    col_adi = mapping.get('Adi')
+    col_soyadi = mapping.get('Soyadi')
 
-        # --- TEMİZLİK ---
-        # 1. Başlık satırlarını ve boşlukları at (TC Kimlik No geçerli olanları tut)
-        def is_valid_row(row):
-            return is_tc(row['TC Kimlik No'])
-            
-        new_df = new_df[new_df.apply(is_valid_row, axis=1)].copy()
-        
-        # 2. Formatları düzelt
-        new_df['Aidat Tutari'] = new_df['Aidat Tutari'].apply(clean_money)
-        new_df['TC Kimlik No'] = new_df['TC Kimlik No'].apply(clean_text)
-        new_df['Uye No'] = new_df['Uye No'].apply(clean_text)
-        
-        # Sıra No'yu yeniden ver (Temizlendikten sonra karışmasın)
-        new_df['Sira No'] = range(1, len(new_df) + 1)
+    # Kullan?c? yer de?i?tir dediyse ters al
+    if swap_names_flag and col_adi is not None and col_soyadi is not None:
+        new_df['Adi'] = df[col_soyadi]
+        new_df['Soyadi'] = df[col_adi]
+    else:
+        new_df['Adi'] = df[col_adi] if col_adi is not None else ""
+        new_df['Soyadi'] = df[col_soyadi] if col_soyadi is not None else ""
 
-        return new_df, None
+    # Temizlik
+    def row_filter(val): return is_tc_potential(val)
+    new_df = new_df[new_df['TC Kimlik No'].apply(row_filter)].copy()
+    
+    new_df['Aidat Tutari'] = new_df['Aidat Tutari'].apply(clean_money_value)
+    new_df['TC Kimlik No'] = new_df['TC Kimlik No'].astype(str).str.split('.').str[0]
+    new_df['Uye No'] = new_df['Uye No'].astype(str).str.split('.').str[0]
+    
+    new_df['Sira No'] = range(1, len(new_df) + 1)
+    new_df.reset_index(drop=True, inplace=True)
+    
+    return new_df, None
 
-    except Exception as e:
-        return None, f"İşleme hatası: {str(e)}"
-
-# --- ARAYÜZ ---
+# --- ARAYUZ ---
 if uploaded_file:
-    with st.spinner('Yapay zeka sütunları analiz ediyor...'):
-        df_result, error = process_file(uploaded_file)
+    with st.spinner('Analiz yap?l?yor...'):
+        # Checkbox durumunu fonksiyona gonderiyoruz
+        df_sonuc, error = process_file(uploaded_file, swap_names)
         
         if error:
             st.error(f"Hata: {error}")
         else:
-            st.success(f"Analiz Tamamlandı! {len(df_result)} kişi bulundu.")
-            st.dataframe(df_result.head())
+            st.success(f"Analiz Tamamland?! {len(df_sonuc)} ki?i bulundu.")
             
+            # Onizleme
+            st.write("### Onizleme (?lk 5 Ki?i)")
+            st.dataframe(df_sonuc.head())
+            
+            if swap_names:
+                st.info("?? 'Ad' ve 'Soyad' sutunlar? yer de?i?tirildi.")
+            
+            # ?ndirme Butonu
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_result.to_excel(writer, index=False)
-                
-            st.download_button("📥 Sonucu İndir", buffer.getvalue(), "Temiz_Liste.xlsx", "application/vnd.ms-excel")
+                df_sonuc.to_excel(writer, index=False)
+            
+            st.download_button(
+                label="?? Duzenlenmi? Excel'i ?ndir",
+                data=buffer.getvalue(),
+                file_name="Duzenlenmis_Liste.xlsx",
+                mime="application/vnd.ms-excel"
+            )
