@@ -4,27 +4,27 @@ import io
 import re
 
 # ------------------ SAYFA AYARLARI ------------------
-st.set_page_config(page_title="Net Liste Duzenleyici", page_icon="?", layout="wide")
-st.title("? Tertemiz Liste Duzenleyici")
-st.markdown("Bo? sutunlar, 'None' yaz?lar? gizlendi. Sadece verisi olan sutunlar? sec.")
+st.set_page_config(page_title="Kesin Cozum", page_icon="??", layout="wide")
+st.title("?? Bo? Sutun Savar")
+st.markdown("Sutunlarda en az 5 tane gercek veri yoksa listede **gosterilmez**.")
 
 # ------------------ YARDIMCI FONKS?YONLAR ------------------
 @st.cache_data
 def load_data_safely(file):
     try:
-        # Excel
+        # Excel Okuma
         if file.name.lower().endswith(('.xlsx', '.xls')):
             return pd.read_excel(file, header=None), None
         
-        # CSV
+        # CSV Okuma
         file.seek(0)
         encodings = ["utf-8", "cp1254", "latin1", "iso-8859-9"]
         for enc in encodings:
             try:
                 file.seek(0)
+                # sep=None otomatik ay?r?c? bulur
                 return pd.read_csv(file, header=None, encoding=enc, sep=None, engine='python'), None
             except: continue
-            
         return None, "Dosya format? desteklenmiyor."
     except Exception as e:
         return None, str(e)
@@ -48,44 +48,43 @@ def clean_money(val):
     try: return float(s)
     except: return 0.0
 
-def get_clean_col_options(df):
-    """Sadece gercek veri iceren sutunlar? listeler. None/nan icerenleri eler."""
+def get_really_clean_options(df):
+    """
+    ACIMASIZ F?LTRE:
+    1. Sutundaki her ?eyi stringe cevirip temizle.
+    2. 'nan', '0', ':', '-', '.' gibi cop verileri yok say.
+    3. E?er sutunda EN AZ 5 TANE anlaml? veri kalm?yorsa, o sutunu cope at.
+    """
     options = ["Seciniz..."]
     mapping = {}
     
+    # Cop Listesi (Bunlar? veri saymayaca??z)
+    garbage_values = ['nan', 'none', 'null', 'nat', '', ' ', '0', '0.0', '0,0', '-', '_', '.', ':', ',', 'tl', 'try']
+
     for col in df.columns:
-        # Sutundaki verileri string'e cevir ve bo?luklar? sil
-        series = df[col].astype(str).str.strip()
+        # 1. Stringe cevir ve kenar bo?luklar?n? sil, kucuk harfe cevir (kontrol icin)
+        series_str = df[col].astype(str).str.strip()
+        series_lower = series_str.str.lower()
         
-        # S?YAH L?STE: Bunlar? veri olarak kabul etme
-        blacklist = ['nan', 'none', 'nat', 'null', '', '0', '0.0', '.', '-', '_']
+        # 2. Cop olmayanlar?n say?s?n? bul
+        # garbage_values listesinde OLMAYAN ve uzunlu?u 1'den buyuk olan veriler
+        valid_mask = (~series_lower.isin(garbage_values)) & (series_str.str.len() > 1)
+        valid_data = df.loc[valid_mask, col] # Orijinal (buyuk/kucuk harfli) veriyi al
         
-        # Siyah listede OLMAYAN verileri bul
-        # case=False buyuk kucuk harf duyars?z yapar (NaN, nan, NAN hepsi gider)
-        valid_data = series[~series.str.lower().isin(blacklist)]
-        
-        # E?er gecerli veri yoksa bu sutunu seceneklere EKLEME
-        if valid_data.empty:
+        # 3. E??K DE?ER?: E?er sutunda 5'ten az gecerli veri varsa bu sutunu gosterme!
+        # (Bu sayede tek bir sayfa numaras? olan bo? sutunlar elenir)
+        if len(valid_data) < 5:
             continue
             
-        # Ornek veri bulma (Ba?l?k olmayan bir ?ey bulmaya cal??)
+        # 4. Ornek Veri Bul (Ba?l?k Olmayan)
         sample = "Veri"
-        found_sample = False
-        
-        # ?lk 100 gecerli veriye bak
-        for val in valid_data.head(100):
-            v_lower = val.lower()
-            # Ba?l?k kelimelerine benzemeyen bir ?ey bul
-            if v_lower not in ["s?ra", "no", "ad?", "soyad?", "tc", "kimlik", "tutar", "aidat", "uye"]:
-                sample = val
-                found_sample = True
+        for val in valid_data.head(50):
+            v_str = str(val).strip()
+            # Ba?l?k kelimelerine benzemiyorsa ornek olarak al
+            if v_str.lower() not in ["s?ra", "no", "ad?", "soyad?", "tc", "kimlik", "uye", "tutar", "aidat", "banka", "sendika"]:
+                sample = v_str
                 break
         
-        # E?er ba?l?k d???nda bir ?ey bulamad?ysa ilk gecerli veriyi al
-        if not found_sample:
-            sample = valid_data.iloc[0]
-            
-        # Cok uzunsa k?salt
         if len(sample) > 20: sample = sample[:17] + "..."
         
         label = f"Sutun {col} ?? {sample}"
@@ -105,16 +104,16 @@ if uploaded_file:
     elif df is not None:
         
         # --- 1. ON?ZLEME ---
-        with st.expander("Dosya Onizlemesini Goster/Gizle", expanded=True):
+        with st.expander("?? Dosya Onizlemesi (T?kla Ac/Kapa)", expanded=True):
             st.dataframe(df.head(50), use_container_width=True)
         
-        # --- 2. TEM?Z SECENEKLER? OLU?TUR ---
-        col_options, col_map = get_clean_col_options(df)
+        # --- 2. ACIMASIZ F?LTREL? SECENEKLER ---
+        col_options, col_map = get_really_clean_options(df)
         
         if len(col_options) == 1:
-            st.error("?? Dosyada anlaml? veri iceren hicbir sutun bulunamad?!")
+            st.error("?? Dosyada i?lenebilecek dolu bir sutun bulunamad?!")
         else:
-            st.info("?? A?a??daki listelerde **sadece dolu sutunlar** gosterilmektedir.")
+            st.success(f"? Gereksiz bo? sutunlar temizlendi. Toplam {len(col_options)-1} dolu sutun bulundu.")
             
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -135,14 +134,13 @@ if uploaded_file:
 
             # --- 3. L?STEY? OLU?TUR ---
             if st.button("L?STEY? OLU?TUR ??", type="primary"):
-                # Basit do?rulama
                 if "Seciniz" in [sel_tc, sel_aidat, sel_ad, sel_soyad]:
-                    st.warning("TC, Aidat, Ad ve Soyad secimi zorunludur.")
+                    st.warning("Lutfen TC, Aidat, Ad ve Soyad alanlar?n? seciniz.")
                 else:
                     try:
                         out = pd.DataFrame()
                         
-                        # Sutunlar? haritadan bulup cek
+                        # Verileri Cek
                         out["TC Kimlik No"] = df[col_map[sel_tc]]
                         out["Aidat Tutar?"] = df[col_map[sel_aidat]]
                         out["Ad?"] = df[col_map[sel_ad]]
@@ -157,7 +155,7 @@ if uploaded_file:
                         
                         # TC
                         out["TC Kimlik No"] = out["TC Kimlik No"].apply(clean_tc)
-                        out = out.dropna(subset=["TC Kimlik No"]) # Bo? TC'leri sil
+                        out = out.dropna(subset=["TC Kimlik No"]) # Gecersiz TC sat?rlar?n? sil
                         
                         # Para
                         out["Aidat Tutar?"] = out["Aidat Tutar?"].apply(clean_money)
@@ -166,13 +164,13 @@ if uploaded_file:
                         if not out.empty:
                             out["Uye No"] = out["Uye No"].astype(str).str.split(".").str[0].replace("nan", "")
 
-                        # S?ra No Ekle
+                        # S?ra No
                         out.insert(0, "S?ra No", range(1, len(out) + 1))
 
                         if out.empty:
-                            st.error("? Kay?t bulunamad?. TC Kimlik sutununu do?ru secti?inizden emin olun.")
+                            st.error("? Kay?t bulunamad?. TC Kimlik sutununu do?ru sectiniz mi?")
                         else:
-                            st.success(f"? {len(out)} kay?t ba?ar?yla olu?turuldu.")
+                            st.success(f"? ??lem Tamam! {len(out)} kay?t listelendi.")
                             st.dataframe(out, use_container_width=True)
 
                             # ?ndir
@@ -181,9 +179,9 @@ if uploaded_file:
                                 out.to_excel(writer, index=False)
                             
                             st.download_button(
-                                "?? Excel Olarak ?ndir",
+                                "?? Temiz Excel ?ndir",
                                 buffer.getvalue(),
-                                "Temiz_Liste.xlsx",
+                                "Net_Liste.xlsx",
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
 
