@@ -11,7 +11,6 @@ st.set_page_config(page_title="BMS Sendika Veri Temizleyici", layout="wide")
 st.title("📂 Sendika Kesinti Listesi Düzenleyici")
 st.markdown("""
 Bu araç, karmaşık CSV/Excel çıktılarını temizler. 
-**11 haneli TC Kimlik Numarasını** referans alarak satırdaki kaymaları otomatik düzeltir.
 """)
 
 # -----------------------------------------------------------------------------
