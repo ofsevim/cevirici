@@ -213,6 +213,53 @@ def apply_column_mapping(df_raw, column_mapping):
     return df_clean
 
 
+def find_data_start_row(uploaded_file, max_rows_to_check=50):
+    """
+    Excel/CSV dosyasında gerçek verinin başladığı satırı bulur.
+    
+    Args:
+        uploaded_file: Streamlit file uploader objesi
+        max_rows_to_check (int): Kontrol edilecek maksimum satır sayısı
+    
+    Returns:
+        int: Veri başlangıç satırı (0-indexed)
+    """
+    try:
+        # Dosyayı header olmadan oku
+        if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
+            df_temp = pd.read_excel(uploaded_file, header=None, nrows=max_rows_to_check, dtype=str)
+        else:
+            uploaded_file.seek(0)
+            raw_bytes = uploaded_file.getvalue()
+            string_data = raw_bytes.decode('cp1254', errors='ignore')
+            
+            from io import StringIO
+            df_temp = pd.read_csv(StringIO(string_data), header=None, nrows=max_rows_to_check, dtype=str, sep=None, engine='python')
+        
+        # Her satırı analiz et
+        for idx, row in df_temp.iterrows():
+            # Satırdaki dolu hücre sayısı
+            non_empty = row.notna().sum()
+            
+            # En az 3 sütun dolu ise ve TC kimlik pattern'i varsa
+            if non_empty >= 3:
+                row_str = ' '.join(row.dropna().astype(str).tolist())
+                
+                # TC Kimlik var mı kontrol et (11 haneli sayı)
+                if re.search(r'\d{11}', row_str):
+                    return idx
+                
+                # Veya çok sayıda sayısal veri varsa (tablo başlangıcı olabilir)
+                numeric_count = sum(1 for val in row.dropna() if str(val).replace(',', '').replace('.', '').isdigit())
+                if numeric_count >= 2:
+                    return idx
+        
+        return 0
+        
+    except Exception:
+        return 0
+
+
 def detect_file_structure(df_raw, sample_size=50):
     """
     Ham veriyi analiz eder ve sütun yapısı hakkında bilgi verir.

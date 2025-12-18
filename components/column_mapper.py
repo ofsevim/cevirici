@@ -26,6 +26,10 @@ def render_column_mapper(df_sample, required_columns):
     with st.expander("📋 Ham Veri Önizleme (İlk 10 Satır)", expanded=True):
         # Sütun numaralarını göster
         preview_df = df_sample.head(10).copy()
+        
+        # NaN/None değerlerini boş string ile değiştir (daha temiz görünüm)
+        preview_df = preview_df.fillna("")
+        
         preview_df.columns = [f"Sütun {i}" for i in range(len(preview_df.columns))]
         
         st.dataframe(
@@ -35,6 +39,15 @@ def render_column_mapper(df_sample, required_columns):
         )
         
         st.caption(f"📊 Toplam {len(df_sample)} satır, {len(df_sample.columns)} sütun")
+        
+        # Veri boşluk kontrolü
+        non_empty_cells = df_sample.notna().sum().sum()
+        total_cells = len(df_sample) * len(df_sample.columns)
+        
+        if non_empty_cells == 0:
+            st.error("⚠️ Tüm hücreler boş! Lütfen 'Atlanan satır sayısı' değerini azaltın.")
+        elif non_empty_cells < total_cells * 0.3:
+            st.warning(f"⚠️ Verilerin çoğu boş ({non_empty_cells}/{total_cells} dolu). Satır atlama ayarını kontrol edin.")
     
     # Mevcut sütun listesi (sütun numaraları ile)
     available_columns = ["-- Seçilmedi --"] + [f"Sütun {i}" for i in range(len(df_sample.columns))]

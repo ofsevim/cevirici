@@ -12,7 +12,8 @@ from components.column_mapper import render_column_mapper, validate_mapping
 from utils.data_processor import (
     read_file_with_encoding,
     apply_column_mapping,
-    detect_file_structure
+    detect_file_structure,
+    find_data_start_row
 )
 
 # -----------------------------------------------------------------------------
@@ -146,8 +147,31 @@ if uploaded_file is not None:
             max_value=100,
             value=st.session_state.skip_rows,
             step=1,
-            help="Dosyanın başından atlanacak satır sayısı"
+            help="Dosyanın başından atlanacak satır sayısı (örn: logo için 12)"
         )
+        
+        # Hızlı seçim butonları
+        quick_skip_col1, quick_skip_col2, quick_skip_col3, quick_skip_col4 = st.columns(4)
+        with quick_skip_col1:
+            if st.button("0 satır", use_container_width=True, key="skip_0"):
+                st.session_state.skip_rows = 0
+                st.rerun()
+        with quick_skip_col2:
+            if st.button("12 satır", use_container_width=True, key="skip_12"):
+                st.session_state.skip_rows = 12
+                st.rerun()
+        with quick_skip_col3:
+            if st.button("20 satır", use_container_width=True, key="skip_20"):
+                st.session_state.skip_rows = 20
+                st.rerun()
+        with quick_skip_col4:
+            if st.button("🤖 Otomatik Bul", use_container_width=True, key="auto_detect"):
+                with st.spinner("Veri satırı tespit ediliyor..."):
+                    uploaded_file.seek(0)
+                    auto_skip = find_data_start_row(uploaded_file)
+                    st.session_state.skip_rows = auto_skip
+                    st.success(f"✅ {auto_skip}. satırdan başlatıldı")
+                    st.rerun()
     
     # Eğer skip_rows değişti veya ilk yükleme ise
     if st.session_state.raw_df is None or skip_rows_input != st.session_state.skip_rows:
