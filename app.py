@@ -75,8 +75,14 @@ st.markdown("""
 # -----------------------------------------------------------------------------
 if 'step' not in st.session_state:
     st.session_state.step = 1
+
+if 'raw_df' not in st.session_state:
     st.session_state.raw_df = None
+
+if 'column_mapping' not in st.session_state:
     st.session_state.column_mapping = None
+
+if 'clean_df' not in st.session_state:
     st.session_state.clean_df = None
 
 # -----------------------------------------------------------------------------
