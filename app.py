@@ -54,26 +54,33 @@ def auto_detect_columns(df):
     columns_lower = [str(col).lower() for col in df.columns]
     
     for idx, col in enumerate(columns_lower):
-        col_clean = fix_turkish_chars(col)
+        col_clean = fix_turkish_chars(col).strip()
         
         # TC Kimlik No tespiti
         if any(keyword in col_clean for keyword in ['tc', 'kimlik', 't.c', 'tcno', 'tckimlik']):
             mapping['tc_no'] = df.columns[idx]
         
-        # Ad tespiti
-        elif any(keyword in col_clean for keyword in ['ad', 'adi', 'adı', 'isim', 'name']) and 'soyad' not in col_clean:
+        # Adı Soyadı (birleşik) tespiti - hem adı hem soyadı için kullan
+        elif 'adı' in col_clean and 'soyad' in col_clean:
+            # Birleşik kolon - ikisi için de kullan
+            mapping['adi'] = df.columns[idx]
+            mapping['soyadi'] = df.columns[idx]
+        
+        # Ad tespiti (ayrı kolon)
+        elif any(keyword in col_clean for keyword in ['adı', 'adi', 'ad ', 'isim', 'name']) and 'soyad' not in col_clean:
             mapping['adi'] = df.columns[idx]
         
-        # Soyad tespiti
+        # Soyad tespiti (ayrı kolon)
         elif any(keyword in col_clean for keyword in ['soyad', 'soyadı', 'surname']):
             mapping['soyadi'] = df.columns[idx]
         
-        # Üye No tespiti
-        elif any(keyword in col_clean for keyword in ['üye', 'uye', 'no', 'sicil', 'member']):
-            mapping['uye_no'] = df.columns[idx]
+        # Üye No / Sıra No tespiti
+        elif any(keyword in col_clean for keyword in ['üye', 'uye', 'sıra', 'sira', 'sicil', 'member', 'persone']):
+            if mapping['uye_no'] is None:  # İlk bulunan
+                mapping['uye_no'] = df.columns[idx]
         
         # Tutar tespiti
-        elif any(keyword in col_clean for keyword in ['tutar', 'aidat', 'miktar', 'amount', 'ücret']):
+        elif any(keyword in col_clean for keyword in ['tutar', 'aidat', 'miktar', 'amount', 'ücret', 'ucret']):
             mapping['tutar'] = df.columns[idx]
     
     return mapping
@@ -132,10 +139,27 @@ def clean_data_with_mapping(df, column_mapping):
         try:
             # Mapping'den kolonları al
             uye_no = str(row[column_mapping['uye_no']]) if column_mapping['uye_no'] and pd.notna(row.get(column_mapping['uye_no'])) else ""
-            adi = str(row[column_mapping['adi']]) if column_mapping['adi'] and pd.notna(row.get(column_mapping['adi'])) else ""
-            soyadi = str(row[column_mapping['soyadi']]) if column_mapping['soyadi'] and pd.notna(row.get(column_mapping['soyadi'])) else ""
             tc_no = str(row[column_mapping['tc_no']]) if column_mapping['tc_no'] and pd.notna(row.get(column_mapping['tc_no'])) else ""
             tutar = str(row[column_mapping['tutar']]) if column_mapping['tutar'] and pd.notna(row.get(column_mapping['tutar'])) else "0"
+            
+            # Ad ve Soyad - birleşik veya ayrı olabilir
+            if column_mapping['adi'] == column_mapping['soyadi'] and column_mapping['adi']:
+                # Birleşik kolon (Adı Soyadı)
+                full_name = str(row[column_mapping['adi']]) if pd.notna(row.get(column_mapping['adi'])) else ""
+                full_name = fix_turkish_chars(full_name).strip()
+                
+                # İsmi ayır (ilk kelime ad, geri kalanı soyad)
+                name_parts = full_name.split(maxsplit=1)
+                adi = name_parts[0] if len(name_parts) > 0 else ""
+                soyadi = name_parts[1] if len(name_parts) > 1 else ""
+            else:
+                # Ayrı kolonlar
+                adi = str(row[column_mapping['adi']]) if column_mapping['adi'] and pd.notna(row.get(column_mapping['adi'])) else ""
+                soyadi = str(row[column_mapping['soyadi']]) if column_mapping['soyadi'] and pd.notna(row.get(column_mapping['soyadi'])) else ""
+                
+                # Türkçe karakter düzeltmeleri
+                adi = fix_turkish_chars(adi).strip()
+                soyadi = fix_turkish_chars(soyadi).strip()
             
             # TC No temizle (sadece rakamlar)
             tc_no = re.sub(r'\D', '', tc_no)
@@ -144,15 +168,13 @@ def clean_data_with_mapping(df, column_mapping):
             if len(tc_no) != 11:
                 continue
             
-            # Türkçe karakter düzeltmeleri
-            adi = fix_turkish_chars(adi)
-            soyadi = fix_turkish_chars(soyadi)
-            
             # Tutar temizle
             tutar = tutar.replace('"', '').replace("'", "").replace(',', '.')
+            # Fazladan boşlukları temizle
+            tutar = tutar.strip()
             
             row_dict = {
-                "Üye No": uye_no,
+                "Üye No": uye_no.strip(),
                 "Adı": adi,
                 "Soyadı": soyadi,
                 "TC Kimlik No": tc_no,
@@ -188,16 +210,57 @@ if uploaded_file is not None:
         # Excel Okuma
         if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
             try:
-                # Başlık satırını otomatik tespit et
-                df_raw = pd.read_excel(uploaded_file, dtype=str)
+                # Önce tüm veriyi header=None ile oku
+                df_all = pd.read_excel(uploaded_file, header=None, dtype=str)
                 
-                # Eğer ilk satır başlık gibi görünmüyorsa, header=None ile tekrar oku
-                if df_raw.columns[0] and re.match(r'^\d+$', str(df_raw.columns[0])):
+                # Başlık satırını bul (TC Kimlik, Adı, Soyadı gibi içeren satır)
+                header_row_idx = None
+                for idx, row in df_all.iterrows():
+                    row_str = ' '.join([str(x).lower() for x in row if pd.notna(x)])
+                    # TC Kimlik içeren satırı bul
+                    if 'tc' in row_str or 'kimlik' in row_str or 'ad' in row_str and 'soyad' in row_str:
+                        header_row_idx = idx
+                        break
+                
+                if header_row_idx is not None:
+                    # Başlık satırından itibaren oku
                     uploaded_file.seek(0)
-                    df_raw = pd.read_excel(uploaded_file, header=None, dtype=str)
+                    df_raw = pd.read_excel(uploaded_file, header=header_row_idx, dtype=str)
+                    
+                    # Boş satırları temizle
+                    df_raw = df_raw.dropna(how='all')
+                    
+                    # Kolon isimlerini temizle (merged cells'den gelen sorunlar için)
+                    new_cols = []
+                    for col in df_raw.columns:
+                        col_str = str(col).strip()
+                        # "Unnamed" kolonları temizle
+                        if 'Unnamed' not in col_str and col_str != 'nan':
+                            new_cols.append(col_str)
+                        else:
+                            new_cols.append(col_str)
+                    df_raw.columns = new_cols
+                    
+                    # TC olan ilk satırı bul (veri başlangıcı)
+                    first_data_idx = None
+                    for idx, row in df_raw.iterrows():
+                        for val in row:
+                            if pd.notna(val) and re.search(r'\d{11}', str(val)):
+                                first_data_idx = idx
+                                break
+                        if first_data_idx is not None:
+                            break
+                    
+                    if first_data_idx is not None:
+                        df_raw = df_raw.loc[first_data_idx:].reset_index(drop=True)
+                else:
+                    # Başlık bulunamadı, normal okuma
+                    uploaded_file.seek(0)
+                    df_raw = pd.read_excel(uploaded_file, dtype=str)
                     
             except Exception as excel_error:
                 st.error(f"Excel okuma hatası: {excel_error}")
+                st.exception(excel_error)
                 st.stop()
         
         # CSV/TXT Okuma (Encoding Denemeleri)
@@ -232,11 +295,15 @@ if uploaded_file is not None:
         
         # DataFrame yüklendi
         if df_raw is not None and not df_raw.empty:
-            st.success("✅ Dosya başarıyla yüklendi!")
+            st.success(f"✅ Dosya başarıyla yüklendi! Toplam {len(df_raw)} satır bulundu.")
             
             # Önizleme
             st.subheader("📋 Veri Önizleme (İlk 5 Satır)")
             st.dataframe(df_raw.head(), use_container_width=True)
+            
+            # Kolon sayısı uyarısı
+            if len(df_raw.columns) < 3:
+                st.warning("⚠️ Az sayıda kolon tespit edildi. Eğer veriler düzgün görünmüyorsa, Excel'deki merged cell'leri kaldırın.")
             
             # Otomatik kolon tespiti
             auto_mapping = auto_detect_columns(df_raw)
