@@ -37,13 +37,20 @@ def fix_turkish_chars(text):
 # -----------------------------------------------------------------------------
 # 2. HAM VERİ PARSE FONKSİYONU (Tüm kolonları çıkar)
 # -----------------------------------------------------------------------------
-def parse_raw_data(file_content):
+def parse_raw_data(file_content, skip_rows=0):
     """
     Ham veriyi parse eder ve TC Kimlik içeren satırları bulur.
     Her satırı kolonlara ayırır.
+    
+    Args:
+        file_content: Dosya içeriği
+        skip_rows: Atlanacak başlık satır sayısı
     """
     data_rows = []
     lines = file_content.splitlines()
+    
+    # Başlık satırlarını atla
+    lines = lines[skip_rows:]
     
     for line in lines:
         # TC Kimlik bul (11 hane)
@@ -143,13 +150,26 @@ def clean_data_with_mapping(raw_data, column_mapping, id_column_name, same_colum
 # 4. ARAYÜZ VE DOSYA YÜKLEME
 # -----------------------------------------------------------------------------
 
-# ID Kolon Adı Seçimi
+# AYARLAR
 st.subheader("⚙️ Ayarlar")
-id_column_choice = st.radio(
-    "ID Kolonu Adı:",
-    options=["Üye No", "Personel No"],
-    horizontal=True
-)
+
+col_a, col_b = st.columns(2)
+
+with col_a:
+    id_column_choice = st.radio(
+        "ID Kolonu Adı:",
+        options=["Üye No", "Personel No"],
+        horizontal=True
+    )
+
+with col_b:
+    skip_rows = st.number_input(
+        "🔢 Atlanacak Başlık Satır Sayısı:",
+        min_value=0,
+        max_value=10,
+        value=0,
+        help="Excel'de başlık satırları varsa kaç satır atlanacağını belirtin (genelde 1 veya 2)"
+    )
 
 st.markdown("---")
 
@@ -181,7 +201,7 @@ if uploaded_file is not None:
         
         # Ham veriyi parse et
         if string_data:
-            raw_data = parse_raw_data(string_data)
+            raw_data = parse_raw_data(string_data, skip_rows=skip_rows)
             
             if not raw_data:
                 st.error("❌ TC Kimlik No içeren satır bulunamadı.")
