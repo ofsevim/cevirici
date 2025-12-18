@@ -1,0 +1,4 @@
+"""
+Yardımcı fonksiyonlar modülü
+"""
+

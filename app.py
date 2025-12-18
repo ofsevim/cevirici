@@ -1,196 +1,279 @@
+"""
+Sendika Kesinti Listesi Düzenleyici - Ana Uygulama
+Modern kolon eşleştirme özelliği ile
+"""
 import streamlit as st
 import pandas as pd
-import re
-import io
+
+# Local modüller
+from utils.file_handler import read_uploaded_file, detect_columns
+from utils.data_processor import map_columns_to_target
+from components.column_mapper import render_column_mapper, render_preview_table
+from components.export_handler import render_export_section
 
 # -----------------------------------------------------------------------------
-# 1. SAYFA AYARLARI
+# SAYFA YAPISI
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Veri Temizleyici", layout="wide")
+st.set_page_config(
+    page_title="Sendika Kesinti Listesi Düzenleyici",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("📂 Sendika Kesinti Listesi Düzenleyici")
+# Modern CSS stilleri
 st.markdown("""
-Bu araç, karmaşık CSV/Excel çıktılarını temizler. 
-""")
-
-# -----------------------------------------------------------------------------
-# YARDIMCI FONKSİYON: BOZUK KARAKTERLERİ DÜZELT
-# -----------------------------------------------------------------------------
-def fix_turkish_chars(text):
-    """
-    Eğer metin bozuk gelirse (Örn: 'Ã¼' yerine 'ü', 'Ý' yerine 'İ') bunları düzeltir.
-    """
-    if not isinstance(text, str):
-        return text
-    
-    # Yaygın encoding hataları haritası
-    replacements = {
-        'Ã¼': 'ü', 'Ã¶': 'ö', 'Ã§': 'ç', 'ÅŸ': 'ş', 'Ä±': 'ı', 'ÄŸ': 'ğ',
-        'Ãœ': 'Ü', 'Ã–': 'Ö', 'Ã‡': 'Ç', 'Åž': 'Ş', 'Ä°': 'İ', 'Äž': 'Ğ',
-        'Ý': 'İ', 'Þ': 'Ş', 'ð': 'ğ', 'ý': 'ı', 'þ': 'ş', 'Ð': 'Ğ'
+<style>
+    /* Ana tema renkleri */
+    :root {
+        --primary-color: #667eea;
+        --secondary-color: #764ba2;
     }
     
-    for bad, good in replacements.items():
-        text = text.replace(bad, good)
-    return text
-
-# -----------------------------------------------------------------------------
-# 2. VERİ TEMİZLEME FONKSİYONU
-# -----------------------------------------------------------------------------
-def clean_and_parse_data_v3(file_content):
-    data_rows = []
+    /* Başlık stilleri */
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 30px;
+        border-radius: 15px;
+        color: white;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
     
-    lines = file_content.splitlines()
+    .main-header h1 {
+        color: white !important;
+        margin: 0;
+        font-size: 2.5rem;
+    }
     
-    for line in lines:
-        # TC Kimlik bul (11 hane)
-        tc_match = re.search(r'(?<!\d)\d{11}(?!\d)', line)
-        
-        if tc_match:
-            try:
-                tc_value = tc_match.group(0)
-                
-                # Ayırıcıyı belirle (Noktalı virgül öncelikli)
-                if ";" in line:
-                    parts = line.split(';')
-                else:
-                    parts = line.split(',')
-                
-                # Temizle
-                clean_parts = [p.strip() for p in parts if p.strip()]
-                
-                # TC index bul
-                try:
-                    tc_index = clean_parts.index(tc_value)
-                except ValueError:
-                    continue 
-
-                # --- VERİ ATAMA ---
-                
-                # Tutar (Temizlenmiş)
-                tutar = "0"
-                if len(clean_parts) > tc_index + 1:
-                    raw_tutar = clean_parts[tc_index + 1]
-                    raw_tutar = raw_tutar.replace('"', '').replace("'", "") # Tırnak sil
-                    tutar = raw_tutar.replace(',', '.') # Virgülü nokta yap
-                
-                # Soyadı
-                soyadi = ""
-                if tc_index > 0:
-                    soyadi = clean_parts[tc_index - 1]
-                    soyadi = fix_turkish_chars(soyadi) # Türkçe karakter düzelt
-                
-                # Adı
-                adi = ""
-                if tc_index > 1:
-                    adi = clean_parts[tc_index - 2]
-                    adi = fix_turkish_chars(adi) # Türkçe karakter düzelt
-                
-                # Üye No
-                uye_no = ""
-                if tc_index > 2:
-                    uye_no = clean_parts[tc_index - 3]
-                else:
-                    uye_no = clean_parts[0] if tc_index > 0 else ""
-
-                row_dict = {
-                    "Üye No": uye_no,
-                    "Adı": adi,
-                    "Soyadı": soyadi,
-                    "TC Kimlik No": tc_value,
-                    "Aidat Tutarı": tutar
-                }
-                data_rows.append(row_dict)
-                
-            except Exception as e:
-                continue
-
-    # DataFrame oluştur
-    df = pd.read_json(io.StringIO(pd.DataFrame(data_rows).to_json(orient='records')))
+    .main-header p {
+        color: #f0f0f0;
+        margin: 10px 0 0 0;
+    }
     
-    # Tutarı sayıya çevir
-    try:
-        df["Aidat Tutarı"] = pd.to_numeric(df["Aidat Tutarı"])
-    except:
-        pass
-
-    return df
+    /* Adım göstergeleri */
+    .step-indicator {
+        background: white;
+        border-left: 4px solid #667eea;
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Upload alanı */
+    .uploadedFile {
+        border: 2px dashed #667eea !important;
+        border-radius: 10px !important;
+    }
+    
+    /* Butonlar */
+    .stButton>button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 24px;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    /* Metrikler */
+    .stMetric {
+        background: white;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    /* DataFrames */
+    .dataframe {
+        border-radius: 10px;
+        overflow: hidden;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 3. ARAYÜZ VE DOSYA YÜKLEME
+# BAŞLIK VE AÇIKLAMA
 # -----------------------------------------------------------------------------
-uploaded_file = st.file_uploader("Dosyayı Yükle", type=["csv", "xlsx", "txt", "xls"])
+st.markdown("""
+<div class="main-header">
+    <h1>📊 Sendika Kesinti Listesi Düzenleyici</h1>
+    <p>Kolon eşleştirme ile her formattaki dosyayı düzenleyin</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Sidebar - Bilgilendirme
+with st.sidebar:
+    st.markdown("### 📖 Nasıl Kullanılır?")
+    st.markdown("""
+    1. **Dosya Yükle**: CSV veya Excel dosyanızı yükleyin
+    2. **Önizleme**: Verilerinizi kontrol edin
+    3. **Kolon Eşleştir**: Her kolonu hedef alan ile eşleştirin
+    4. **İndir**: Temizlenmiş dosyayı indirin
+    """)
+    
+    st.divider()
+    
+    st.markdown("### ⚙️ Desteklenen Formatlar")
+    st.markdown("""
+    - Excel (.xlsx, .xls)
+    - CSV (virgül, noktalı virgül, tab)
+    - Text (.txt)
+    """)
+    
+    st.divider()
+    
+    st.markdown("### 🎯 Hedef Kolonlar")
+    st.markdown("""
+    - Üye No
+    - Adı
+    - Soyadı
+    - TC Kimlik No
+    - Aidat Tutarı
+    """)
+
+# -----------------------------------------------------------------------------
+# SESSION STATE YÖNETİMİ
+# -----------------------------------------------------------------------------
+if 'step' not in st.session_state:
+    st.session_state.step = 1
+if 'df_raw' not in st.session_state:
+    st.session_state.df_raw = None
+if 'column_info' not in st.session_state:
+    st.session_state.column_info = None
+if 'df_processed' not in st.session_state:
+    st.session_state.df_processed = None
+
+# Hedef kolonlar
+TARGET_COLUMNS = ["Üye No", "Adı", "Soyadı", "TC Kimlik No", "Aidat Tutarı"]
+
+# -----------------------------------------------------------------------------
+# ADIM 1: DOSYA YÜKLEME
+# -----------------------------------------------------------------------------
+st.markdown("""
+<div class="step-indicator">
+    <h3>🗂️ Adım 1: Dosya Yükleme</h3>
+</div>
+""", unsafe_allow_html=True)
+
+uploaded_file = st.file_uploader(
+    "Dosyanızı buraya sürükleyin veya seçin",
+    type=["csv", "xlsx", "txt", "xls"],
+    help="CSV, Excel veya Text formatında dosya yükleyebilirsiniz"
+)
 
 if uploaded_file is not None:
-    st.info("Dosya analiz ediliyor...")
-    
-    string_data = ""
-    
-    try:
-        # Excel Okuma
-        if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
-            try:
-                # Excel'i oku
-                df_temp = pd.read_excel(uploaded_file, header=None, dtype=str)
-                # CSV stringe çevir (noktalı virgül ile)
-                string_data = df_temp.to_csv(index=False, header=False, sep=';')
-            except Exception as excel_error:
-                st.error(f"Excel hatası: {excel_error}")
-        
-        # Metin Okuma (Encoding Denemeleri)
-        else:
-            raw_bytes = uploaded_file.getvalue()
-            # 1. Öncelik: Türkçe Windows (Excel CSV'leri genelde budur)
-            try:
-                string_data = raw_bytes.decode("cp1254")
-            except UnicodeDecodeError:
-                # 2. Öncelik: UTF-8
-                try:
-                    string_data = raw_bytes.decode("utf-8")
-                except UnicodeDecodeError:
-                    # 3. Öncelik: ISO-8859-9 (Alternatif Türkçe)
-                    try:
-                        string_data = raw_bytes.decode("iso-8859-9")
-                    except UnicodeDecodeError:
-                         string_data = raw_bytes.decode("latin-1")
-        
-        # Temizle ve Göster
-        if string_data:
-            df_clean = clean_and_parse_data_v3(string_data)
+    # Dosyayı oku
+    if st.session_state.df_raw is None:
+        with st.spinner("Dosya okunuyor..."):
+            df, error = read_uploaded_file(uploaded_file)
             
-            if not df_clean.empty:
-                st.success(f"Başarılı! Toplam {len(df_clean)} kişi listelendi.")
-                st.dataframe(df_clean)
-                
-                # Excel İndir
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                    df_clean.to_excel(writer, index=False, sheet_name='Temiz Liste')
-                    workbook = writer.book
-                    worksheet = writer.sheets['Temiz Liste']
-                    
-                    # Başlık Formatı (Kalın ve Renkli)
-                    header_format = workbook.add_format({
-                        'bold': True,
-                        'text_wrap': True,
-                        'valign': 'top',
-                        'fg_color': '#D7E4BC',
-                        'border': 1
-                    })
-                    
-                    for col_num, value in enumerate(df_clean.columns.values):
-                        worksheet.write(0, col_num, value, header_format)
-                        
-                    worksheet.set_column('A:E', 20)
-
-                st.download_button(
-                    label="📥 Temiz Excel İndir",
-                    data=buffer,
-                    file_name="BMS_Sendika_Temiz.xlsx",
-                    mime="application/vnd.ms-excel"
-                )
+            if error:
+                st.error(f"❌ {error}")
             else:
-                st.error("TC Kimlik No bulunamadı.")
-                
-    except Exception as e:
-        st.error(f"Beklenmeyen hata: {e}")
+                st.session_state.df_raw = df
+                st.session_state.column_info = detect_columns(df)
+                st.session_state.step = 2
+                st.success(f"✅ Dosya başarıyla yüklendi! ({len(df)} satır, {len(df.columns)} kolon)")
+    
+    # -----------------------------------------------------------------------------
+    # ADIM 2: VERİ ÖNİZLEME VE KOLON ALGILAMA
+    # -----------------------------------------------------------------------------
+    if st.session_state.step >= 2 and st.session_state.df_raw is not None:
+        st.markdown("""
+        <div class="step-indicator">
+            <h3>👁️ Adım 2: Veri Önizleme</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        render_preview_table(st.session_state.df_raw, max_rows=15)
+        
+        st.divider()
+        
+        # -----------------------------------------------------------------------------
+        # ADIM 3: KOLON EŞLEŞTİRME
+        # -----------------------------------------------------------------------------
+        st.markdown("""
+        <div class="step-indicator">
+            <h3>🔗 Adım 3: Kolon Eşleştirme</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        column_mapping = render_column_mapper(
+            st.session_state.column_info,
+            TARGET_COLUMNS
+        )
+        
+        # İşleme butonu
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("✨ Verileri İşle", use_container_width=True, type="primary"):
+                # En az bir kolon eşleşmeli
+                if all(v is None for v in column_mapping.values()):
+                    st.error("❌ Lütfen en az bir kolon eşleştirmesi yapın!")
+                else:
+                    with st.spinner("Veriler işleniyor..."):
+                        try:
+                            df_processed = map_columns_to_target(
+                                st.session_state.df_raw,
+                                column_mapping
+                            )
+                            st.session_state.df_processed = df_processed
+                            st.session_state.step = 4
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ İşlem sırasında hata oluştu: {str(e)}")
+        
+        # -----------------------------------------------------------------------------
+        # ADIM 4: SONUÇ VE EXPORT
+        # -----------------------------------------------------------------------------
+        if st.session_state.step >= 4 and st.session_state.df_processed is not None:
+            st.divider()
+            
+            st.markdown("""
+            <div class="step-indicator">
+                <h3>🎉 Adım 4: İşlenmiş Veriler</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # İşlenmiş verileri göster
+            st.markdown("### ✅ Temizlenmiş Veriler")
+            st.dataframe(
+                st.session_state.df_processed,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.divider()
+            
+            # Export seçenekleri
+            render_export_section(st.session_state.df_processed)
+            
+            # Yeni işlem butonu
+            st.divider()
+            if st.button("🔄 Yeni Dosya Yükle", use_container_width=True):
+                # Session state'i temizle
+                st.session_state.step = 1
+                st.session_state.df_raw = None
+                st.session_state.column_info = None
+                st.session_state.df_processed = None
+                st.rerun()
+
+# -----------------------------------------------------------------------------
+# ALT BİLGİ
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 20px;">
+    <p>💡 <strong>İpucu:</strong> Dosyanızın ilk satırı başlık içermiyorsa da sorun yok, 
+    sistem otomatik olalgılar.</p>
+    <p style="margin-top: 10px;">Made with ❤️ using Streamlit</p>
+</div>
+""", unsafe_allow_html=True)
