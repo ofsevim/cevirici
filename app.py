@@ -37,7 +37,12 @@ def fix_turkish_chars(text):
 # -----------------------------------------------------------------------------
 # 2. VERİ TEMİZLEME FONKSİYONU
 # -----------------------------------------------------------------------------
-def clean_and_parse_data_v3(file_content):
+def clean_and_parse_data_v3(file_content, id_column_name="Üye No"):
+    """
+    Args:
+        file_content: Dosya içeriği
+        id_column_name: İlk kolona verilecek ad (Üye No, Personel No, vb.)
+    """
     data_rows = []
     
     lines = file_content.splitlines()
@@ -86,15 +91,15 @@ def clean_and_parse_data_v3(file_content):
                     adi = clean_parts[tc_index - 2]
                     adi = fix_turkish_chars(adi) # Türkçe karakter düzelt
                 
-                # Üye No
-                uye_no = ""
+                # ID (Üye/Personel No)
+                id_no = ""
                 if tc_index > 2:
-                    uye_no = clean_parts[tc_index - 3]
+                    id_no = clean_parts[tc_index - 3]
                 else:
-                    uye_no = clean_parts[0] if tc_index > 0 else ""
+                    id_no = clean_parts[0] if tc_index > 0 else ""
 
                 row_dict = {
-                    "Üye No": uye_no,
+                    id_column_name: id_no,
                     "Adı": adi,
                     "Soyadı": soyadi,
                     "TC Kimlik No": tc_value,
@@ -119,6 +124,18 @@ def clean_and_parse_data_v3(file_content):
 # -----------------------------------------------------------------------------
 # 3. ARAYÜZ VE DOSYA YÜKLEME
 # -----------------------------------------------------------------------------
+
+# Kolon Adı Seçimi
+st.subheader("⚙️ Ayarlar")
+id_column_choice = st.radio(
+    "İlk kolon adını seçin:",
+    options=["Üye No", "Personel No"],
+    horizontal=True,
+    help="Bazı Excel dosyalarında 'Üye No', bazılarında 'Personel No' yazabilir."
+)
+
+st.markdown("---")
+
 uploaded_file = st.file_uploader("Dosyayı Yükle", type=["csv", "xlsx", "txt", "xls"])
 
 if uploaded_file is not None:
@@ -156,7 +173,7 @@ if uploaded_file is not None:
         
         # Temizle ve Göster
         if string_data:
-            df_clean = clean_and_parse_data_v3(string_data)
+            df_clean = clean_and_parse_data_v3(string_data, id_column_name=id_column_choice)
             
             if not df_clean.empty:
                 st.success(f"Başarılı! Toplam {len(df_clean)} kişi listelendi.")
@@ -183,10 +200,13 @@ if uploaded_file is not None:
                         
                     worksheet.set_column('A:E', 20)
 
+                # Dosya adını dinamik oluştur
+                file_prefix = "Uye" if id_column_choice == "Üye No" else "Personel"
+                
                 st.download_button(
                     label="📥 Temiz Excel İndir",
                     data=buffer,
-                    file_name="BMS_Sendika_Temiz.xlsx",
+                    file_name=f"BMS_Sendika_{file_prefix}_Temiz.xlsx",
                     mime="application/vnd.ms-excel"
                 )
             else:
