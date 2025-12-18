@@ -33,13 +33,14 @@ def fix_turkish_chars(text):
     return text
 
 
-def read_file_with_encoding(uploaded_file):
+def read_file_with_encoding(uploaded_file, skip_rows=0):
     """
     Yüklenen dosyayı uygun encoding ile okur.
     Excel ve metin dosyalarını destekler.
     
     Args:
         uploaded_file: Streamlit file uploader objesi
+        skip_rows (int): Atlanacak başlangıç satır sayısı
     
     Returns:
         pd.DataFrame: Ham veri DataFrame'i
@@ -48,7 +49,13 @@ def read_file_with_encoding(uploaded_file):
     # Excel dosyası kontrolü
     if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
         try:
-            df = pd.read_excel(uploaded_file, header=None, dtype=str)
+            df = pd.read_excel(uploaded_file, header=None, dtype=str, skiprows=skip_rows)
+            # Tamamen boş satırları temizle
+            df = df.dropna(how='all').reset_index(drop=True)
+            # Tamamen boş sütunları temizle
+            df = df.dropna(axis=1, how='all')
+            # Sütun numaralarını yeniden düzenle
+            df.columns = range(len(df.columns))
             return df
         except Exception as e:
             raise ValueError(f"Excel okuma hatası: {e}")
@@ -61,6 +68,11 @@ def read_file_with_encoding(uploaded_file):
     for enc in encodings:
         try:
             string_data = raw_bytes.decode(enc)
+            
+            # Atlanacak satırları çıkar
+            if skip_rows > 0:
+                lines = string_data.split('\n')
+                string_data = '\n'.join(lines[skip_rows:])
             
             # Ayırıcıyı tespit et
             if ';' in string_data.split('\n')[0]:
@@ -75,6 +87,13 @@ def read_file_with_encoding(uploaded_file):
             # DataFrame'e dönüştür
             from io import StringIO
             df = pd.read_csv(StringIO(string_data), sep=separator, header=None, dtype=str, engine='python')
+            
+            # Tamamen boş satırları temizle
+            df = df.dropna(how='all').reset_index(drop=True)
+            # Tamamen boş sütunları temizle
+            df = df.dropna(axis=1, how='all')
+            # Sütun numaralarını yeniden düzenle
+            df.columns = range(len(df.columns))
             
             return df
             

@@ -23,11 +23,21 @@ def render_column_mapper(df_sample, required_columns):
     st.info("👇 Dosyanızdaki sütunları uygun alanlara eşleştirin")
     
     # Ham verinin önizlemesi
-    with st.expander("📋 Ham Veri Önizleme (İlk 5 Satır)", expanded=True):
-        st.dataframe(df_sample.head(), use_container_width=True)
+    with st.expander("📋 Ham Veri Önizleme (İlk 10 Satır)", expanded=True):
+        # Sütun numaralarını göster
+        preview_df = df_sample.head(10).copy()
+        preview_df.columns = [f"Sütun {i}" for i in range(len(preview_df.columns))]
+        
+        st.dataframe(
+            preview_df,
+            use_container_width=True,
+            height=400
+        )
+        
+        st.caption(f"📊 Toplam {len(df_sample)} satır, {len(df_sample.columns)} sütun")
     
-    # Mevcut sütun listesi
-    available_columns = ["-- Seçilmedi --"] + list(df_sample.columns)
+    # Mevcut sütun listesi (sütun numaraları ile)
+    available_columns = ["-- Seçilmedi --"] + [f"Sütun {i}" for i in range(len(df_sample.columns))]
     
     # Eşleştirme formu
     st.markdown("#### Sütunları Eşleştir")
@@ -62,19 +72,22 @@ def render_column_mapper(df_sample, required_columns):
             )
             
             if selected != "-- Seçilmedi --":
-                mapping[internal_key] = selected
+                # "Sütun 0" -> 0 dönüşümü
+                col_index = int(selected.split(" ")[1])
+                mapping[internal_key] = col_index
     
     # Otomatik algılama önerisi göster
     with st.expander("💡 Akıllı Öneri", expanded=False):
         suggestions = auto_suggest_columns(df_sample, required_columns)
         if suggestions:
             st.markdown("**Önerilen Eşleşmeler:**")
-            for key, col in suggestions.items():
-                st.markdown(f"- `{[k for k, v in required_columns.items() if v == key][0]}` → **{col}**")
+            for key, col_idx in suggestions.items():
+                display_name = [k for k, v in required_columns.items() if v == key][0]
+                st.markdown(f"- `{display_name}` → **Sütun {col_idx}**")
             
             if st.button("🎯 Önerileri Uygula", use_container_width=True):
-                for key, col in suggestions.items():
-                    st.session_state[f"map_{key}"] = col
+                for key, col_idx in suggestions.items():
+                    st.session_state[f"map_{key}"] = f"Sütun {col_idx}"
                 st.rerun()
     
     return mapping
@@ -82,14 +95,14 @@ def render_column_mapper(df_sample, required_columns):
 
 def auto_suggest_columns(df, required_columns):
     """
-    Sütun isimlerine göre otomatik eşleştirme önerisi yapar.
+    Sütun içeriğine göre otomatik eşleştirme önerisi yapar.
     
     Args:
         df (pd.DataFrame): Ham veri
         required_columns (dict): Gerekli sütunlar
     
     Returns:
-        dict: Önerilen eşleşmeler
+        dict: Önerilen eşleşmeler {internal_key: column_index}
     """
     suggestions = {}
     
@@ -102,15 +115,40 @@ def auto_suggest_columns(df, required_columns):
         'amount': ['tutar', 'aidat', 'miktar', 'amount', 'price', 'fiyat', 'ücret']
     }
     
-    for col in df.columns:
-        col_lower = str(col).lower()
+    # Her sütunu analiz et
+    for col_idx in range(len(df.columns)):
+        # İlk 20 satırı sample olarak al
+        sample_values = df[col_idx].astype(str).head(20)
         
-        for internal_key in required_columns.values():
-            if internal_key in keywords:
-                for keyword in keywords[internal_key]:
-                    if keyword in col_lower:
-                        suggestions[internal_key] = col
-                        break
+        # TC Kimlik tespiti (11 haneli sayılar)
+        if 'tc_no' not in suggestions:
+            tc_pattern_count = sample_values.str.match(r'^\d{11}$').sum()
+            if tc_pattern_count >= 10:  # En az 10 satır TC formatında
+                suggestions['tc_no'] = col_idx
+                continue
+        
+        # Tutar tespiti (sayısal değerler, virgül/nokta içeren)
+        if 'amount' not in suggestions:
+            amount_pattern_count = sample_values.str.match(r'^[\d\.,]+$').sum()
+            if amount_pattern_count >= 10:
+                suggestions['amount'] = col_idx
+                continue
+        
+        # Üye No tespiti (5-6 haneli sayılar genelde)
+        if 'member_no' not in suggestions:
+            member_pattern_count = sample_values.str.match(r'^\d{4,7}$').sum()
+            if member_pattern_count >= 10:
+                suggestions['member_no'] = col_idx
+                continue
+        
+        # İsim tespiti (2-3 kelime uzunluğu, harf karakterler)
+        if 'first_name' not in suggestions or 'last_name' not in suggestions:
+            name_pattern_count = sample_values.str.match(r'^[A-Za-zÇçĞğİıÖöŞşÜü\s]{2,30}$').sum()
+            if name_pattern_count >= 10:
+                if 'first_name' not in suggestions:
+                    suggestions['first_name'] = col_idx
+                elif 'last_name' not in suggestions:
+                    suggestions['last_name'] = col_idx
     
     return suggestions
 

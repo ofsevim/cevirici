@@ -85,6 +85,9 @@ if 'column_mapping' not in st.session_state:
 if 'clean_df' not in st.session_state:
     st.session_state.clean_df = None
 
+if 'skip_rows' not in st.session_state:
+    st.session_state.skip_rows = 0
+
 # -----------------------------------------------------------------------------
 # SIDEBAR: İLERLEME TAKİBİ
 # -----------------------------------------------------------------------------
@@ -130,12 +133,37 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     
-    # İlk yükleme
-    if st.session_state.raw_df is None:
+    # İlk yükleme veya skip_rows değişti
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.info("💡 Excel'de başlık/logo varsa, atlanacak satır sayısını ayarlayın")
+    
+    with col2:
+        skip_rows_input = st.number_input(
+            "Atlanan satır sayısı",
+            min_value=0,
+            max_value=100,
+            value=st.session_state.skip_rows,
+            step=1,
+            help="Dosyanın başından atlanacak satır sayısı"
+        )
+    
+    # Eğer skip_rows değişti veya ilk yükleme ise
+    if st.session_state.raw_df is None or skip_rows_input != st.session_state.skip_rows:
+        st.session_state.skip_rows = skip_rows_input
+        
+        # Dosyayı yeniden oku
         with st.spinner("📂 Dosya okunuyor..."):
             try:
-                st.session_state.raw_df = read_file_with_encoding(uploaded_file)
+                # Dosya pointer'ını başa al
+                uploaded_file.seek(0)
+                st.session_state.raw_df = read_file_with_encoding(uploaded_file, skip_rows=skip_rows_input)
                 st.session_state.step = 2
+                
+                # Önceki işlemleri sıfırla
+                st.session_state.clean_df = None
+                
                 st.success(f"✅ Dosya başarıyla yüklendi! ({len(st.session_state.raw_df)} satır, {len(st.session_state.raw_df.columns)} sütun)")
             except Exception as e:
                 st.error(f"❌ Hata: {e}")
