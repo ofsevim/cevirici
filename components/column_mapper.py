@@ -1,196 +1,135 @@
 """
-Kolon eşleştirme UI componenti
+Sütun Eşleştirme Component
+Bu modül, yüklenen dosyalardaki sütunların hedef alanlara eşleştirilmesi için UI sağlar.
 """
+
 import streamlit as st
+import pandas as pd
 
 
-def render_column_mapper(column_info, target_columns):
+def render_column_mapper(df_sample, required_columns):
     """
-    Kolon eşleştirme arayüzünü render eder
+    Sütun eşleştirme arayüzünü render eder.
     
     Args:
-        column_info: Kaynak kolonlar hakkında bilgi (detect_columns'dan)
-        target_columns: Hedef kolon isimleri listesi
-        
+        df_sample (pd.DataFrame): Ham veri örneği (ilk birkaç satır)
+        required_columns (dict): {'display_name': 'internal_key', ...} formatında gerekli sütunlar
+    
     Returns:
-        dict: {hedef_kolon: kaynak_kolon_index} formatında mapping
+        dict: Eşleştirilmiş sütun haritası {'internal_key': column_index/name, ...}
     """
-    st.markdown("### 🎯 Kolon Eşleştirme")
-    st.markdown("Her hedef kolonu dosyanızdaki bir kolonla eşleştirin:")
     
-    # Modern stil için CSS
-    st.markdown("""
-    <style>
-        .column-mapper {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-        .mapper-title {
-            color: white;
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        .stSelectbox {
-            background-color: white !important;
-        }
-        .column-preview {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 10px;
-            border-left: 4px solid #667eea;
-        }
-        .sample-data {
-            font-size: 12px;
-            color: #6c757d;
-            margin-top: 5px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown("### 🔄 Sütun Eşleştirme")
+    st.info("👇 Dosyanızdaki sütunları uygun alanlara eşleştirin")
     
-    column_mapping = {}
+    # Ham verinin önizlemesi
+    with st.expander("📋 Ham Veri Önizleme (İlk 5 Satır)", expanded=True):
+        st.dataframe(df_sample.head(), use_container_width=True)
     
-    # Her hedef kolon için seçim kutusu
-    cols = st.columns([1, 2])
+    # Mevcut sütun listesi
+    available_columns = ["-- Seçilmedi --"] + list(df_sample.columns)
     
-    with cols[0]:
-        st.markdown("**Hedef Kolon**")
-    with cols[1]:
-        st.markdown("**Kaynak Kolon**")
+    # Eşleştirme formu
+    st.markdown("#### Sütunları Eşleştir")
     
-    st.divider()
+    col_left, col_right = st.columns(2)
     
-    for target_col in target_columns:
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            # Hedef kolon ismi
-            icon = get_column_icon(target_col)
-            st.markdown(f"### {icon} {target_col}")
-        
-        with col2:
-            # Kaynak kolon seçimi
-            options = ["Seçilmedi"] + [
-                f"Kolon {info['index'] + 1} ({info['type']})" 
-                for info in column_info
-            ]
-            
-            # Otomatik eşleştirme önerisi
-            suggested_idx = suggest_column_match(target_col, column_info)
-            default_index = suggested_idx + 1 if suggested_idx is not None else 0
-            
+    mapping = {}
+    
+    # İki sütuna bölerek selectbox'ları yerleştir
+    items = list(required_columns.items())
+    mid_point = (len(items) + 1) // 2
+    
+    with col_left:
+        for display_name, internal_key in items[:mid_point]:
             selected = st.selectbox(
-                f"{target_col} için kaynak kolon",
-                options=options,
-                index=default_index,
-                key=f"map_{target_col}",
-                label_visibility="collapsed"
+                f"**{display_name}** için sütun seç:",
+                options=available_columns,
+                key=f"map_{internal_key}",
+                help=f"{display_name} bilgisinin bulunduğu sütunu seçin"
             )
             
-            # Seçilen kolonun örnek verileri
-            if selected != "Seçilmedi":
-                col_idx = int(selected.split()[1]) - 1
-                col_data = next((c for c in column_info if c['index'] == col_idx), None)
-                
-                if col_data:
-                    column_mapping[target_col] = col_idx
-                    
-                    # Örnek verileri göster
-                    with st.expander("📋 Önizleme", expanded=False):
-                        st.markdown("**Örnek Veriler:**")
-                        for sample in col_data['samples'][:3]:
-                            st.code(sample, language=None)
-            else:
-                column_mapping[target_col] = None
+            if selected != "-- Seçilmedi --":
+                mapping[internal_key] = selected
     
-    return column_mapping
+    with col_right:
+        for display_name, internal_key in items[mid_point:]:
+            selected = st.selectbox(
+                f"**{display_name}** için sütun seç:",
+                options=available_columns,
+                key=f"map_{internal_key}",
+                help=f"{display_name} bilgisinin bulunduğu sütunu seçin"
+            )
+            
+            if selected != "-- Seçilmedi --":
+                mapping[internal_key] = selected
+    
+    # Otomatik algılama önerisi göster
+    with st.expander("💡 Akıllı Öneri", expanded=False):
+        suggestions = auto_suggest_columns(df_sample, required_columns)
+        if suggestions:
+            st.markdown("**Önerilen Eşleşmeler:**")
+            for key, col in suggestions.items():
+                st.markdown(f"- `{[k for k, v in required_columns.items() if v == key][0]}` → **{col}**")
+            
+            if st.button("🎯 Önerileri Uygula", use_container_width=True):
+                for key, col in suggestions.items():
+                    st.session_state[f"map_{key}"] = col
+                st.rerun()
+    
+    return mapping
 
 
-def suggest_column_match(target_col, column_info):
+def auto_suggest_columns(df, required_columns):
     """
-    Hedef kolon için en uygun kaynak kolonu önerir
+    Sütun isimlerine göre otomatik eşleştirme önerisi yapar.
     
     Args:
-        target_col: Hedef kolon ismi
-        column_info: Kaynak kolon bilgileri
-        
+        df (pd.DataFrame): Ham veri
+        required_columns (dict): Gerekli sütunlar
+    
     Returns:
-        int: Önerilen kolon index'i veya None
+        dict: Önerilen eşleşmeler
     """
-    # TC Kimlik için 11 haneli sayı ara
-    if target_col == "TC Kimlik No":
-        for col in column_info:
-            if col['type'] == 'tc_kimlik':
-                return col['index']
+    suggestions = {}
     
-    # Tutar için numeric veya currency ara
-    elif target_col == "Aidat Tutarı":
-        for col in column_info:
-            if col['type'] in ['currency', 'numeric']:
-                return col['index']
-    
-    # Üye No için numeric ara (TC'den önce gelen)
-    elif target_col == "Üye No":
-        numeric_cols = [c for c in column_info if c['type'] == 'numeric']
-        if numeric_cols:
-            return numeric_cols[0]['index']
-    
-    return None
-
-
-def get_column_icon(column_name):
-    """
-    Kolon ismine göre emoji icon döndürür
-    
-    Args:
-        column_name: Kolon ismi
-        
-    Returns:
-        str: Emoji
-    """
-    icons = {
-        "Üye No": "🔢",
-        "Adı": "👤",
-        "Soyadı": "👨‍💼",
-        "TC Kimlik No": "🆔",
-        "Aidat Tutarı": "💰"
+    # Arama anahtar kelimeleri
+    keywords = {
+        'member_no': ['üye', 'no', 'uye', 'member', 'id', 'sicil'],
+        'first_name': ['ad', 'adi', 'name', 'first', 'isim'],
+        'last_name': ['soyad', 'soyadi', 'surname', 'last'],
+        'tc_no': ['tc', 'kimlik', 'tckimlik', 'identity', 'tcno'],
+        'amount': ['tutar', 'aidat', 'miktar', 'amount', 'price', 'fiyat', 'ücret']
     }
-    return icons.get(column_name, "📋")
+    
+    for col in df.columns:
+        col_lower = str(col).lower()
+        
+        for internal_key in required_columns.values():
+            if internal_key in keywords:
+                for keyword in keywords[internal_key]:
+                    if keyword in col_lower:
+                        suggestions[internal_key] = col
+                        break
+    
+    return suggestions
 
 
-def render_preview_table(df, max_rows=10):
+def validate_mapping(mapping, required_columns):
     """
-    DataFrame önizlemesi gösterir (modern stil)
+    Eşleştirmenin geçerli olup olmadığını kontrol eder.
     
     Args:
-        df: Gösterilecek DataFrame
-        max_rows: Maksimum satır sayısı
+        mapping (dict): Kullanıcının yaptığı eşleştirme
+        required_columns (dict): Gerekli sütunlar
+    
+    Returns:
+        tuple: (is_valid: bool, missing_fields: list)
     """
-    st.markdown("### 📊 Veri Önizleme")
+    required_keys = set(required_columns.values())
+    mapped_keys = set(mapping.keys())
     
-    # Özet bilgiler
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Toplam Satır", len(df))
-    with col2:
-        st.metric("Toplam Kolon", len(df.columns))
-    with col3:
-        # Dolu hücre oranı
-        filled_ratio = (df.notna().sum().sum() / (len(df) * len(df.columns))) * 100
-        st.metric("Dolu Hücre", f"{filled_ratio:.1f}%")
+    missing = required_keys - mapped_keys
     
-    st.divider()
-    
-    # Tablo önizleme
-    st.dataframe(
-        df.head(max_rows),
-        use_container_width=True,
-        hide_index=True
-    )
-    
-    if len(df) > max_rows:
-        st.info(f"İlk {max_rows} satır gösteriliyor. Toplam {len(df)} satır var.")
+    return len(missing) == 0, list(missing)
 

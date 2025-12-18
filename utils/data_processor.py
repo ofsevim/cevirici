@@ -1,177 +1,242 @@
 """
-Veri işleme ve dönüştürme fonksiyonları
+Veri İşleme Yardımcı Fonksiyonlar
+Bu modül, dosya okuma, karakter düzeltme ve veri temizleme işlemlerini içerir.
 """
+
 import pandas as pd
 import re
-from .file_handler import fix_turkish_chars
 
 
-def map_columns_to_target(df, column_mapping):
+def fix_turkish_chars(text):
     """
-    Kullanıcının seçtiği kolon eşleştirmesine göre DataFrame'i dönüştürür
+    Bozuk encoding'den kaynaklı Türkçe karakter hatalarını düzeltir.
     
     Args:
-        df: Kaynak DataFrame
-        column_mapping: {"hedef_kolon": kaynak_kolon_index} formatında dict
-        
-    Returns:
-        DataFrame: Dönüştürülmüş DataFrame
-    """
-    result_data = []
+        text (str): Düzeltilecek metin
     
-    for idx, row in df.iterrows():
-        row_dict = {}
-        
-        for target_col, source_idx in column_mapping.items():
-            if source_idx is not None and source_idx != "":
-                value = str(row.iloc[int(source_idx)]) if pd.notna(row.iloc[int(source_idx)]) else ""
-                
-                # Türkçe karakter düzeltmesi
-                if target_col in ["Adı", "Soyadı"]:
-                    value = fix_turkish_chars(value)
-                
-                # Tutar temizleme
-                elif target_col == "Aidat Tutarı":
-                    value = clean_amount(value)
-                
-                row_dict[target_col] = value
+    Returns:
+        str: Düzeltilmiş metin
+    """
+    if not isinstance(text, str):
+        return text
+    
+    # Yaygın encoding hataları haritası
+    replacements = {
+        'Ã¼': 'ü', 'Ã¶': 'ö', 'Ã§': 'ç', 'ÅŸ': 'ş', 'Ä±': 'ı', 'ÄŸ': 'ğ',
+        'Ãœ': 'Ü', 'Ã–': 'Ö', 'Ã‡': 'Ç', 'Åž': 'Ş', 'Ä°': 'İ', 'Äž': 'Ğ',
+        'Ý': 'İ', 'Þ': 'Ş', 'ð': 'ğ', 'ý': 'ı', 'þ': 'ş', 'Ð': 'Ğ'
+    }
+    
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    
+    return text
+
+
+def read_file_with_encoding(uploaded_file):
+    """
+    Yüklenen dosyayı uygun encoding ile okur.
+    Excel ve metin dosyalarını destekler.
+    
+    Args:
+        uploaded_file: Streamlit file uploader objesi
+    
+    Returns:
+        pd.DataFrame: Ham veri DataFrame'i
+    """
+    
+    # Excel dosyası kontrolü
+    if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
+        try:
+            df = pd.read_excel(uploaded_file, header=None, dtype=str)
+            return df
+        except Exception as e:
+            raise ValueError(f"Excel okuma hatası: {e}")
+    
+    # Metin dosyası (CSV/TXT) için encoding denemeleri
+    raw_bytes = uploaded_file.getvalue()
+    
+    encodings = ['cp1254', 'utf-8', 'iso-8859-9', 'latin-1']
+    
+    for enc in encodings:
+        try:
+            string_data = raw_bytes.decode(enc)
+            
+            # Ayırıcıyı tespit et
+            if ';' in string_data.split('\n')[0]:
+                separator = ';'
+            elif ',' in string_data.split('\n')[0]:
+                separator = ','
+            elif '\t' in string_data.split('\n')[0]:
+                separator = '\t'
             else:
-                row_dict[target_col] = ""
-        
-        result_data.append(row_dict)
+                separator = ','
+            
+            # DataFrame'e dönüştür
+            from io import StringIO
+            df = pd.read_csv(StringIO(string_data), sep=separator, header=None, dtype=str, engine='python')
+            
+            return df
+            
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            continue
     
-    return pd.DataFrame(result_data)
+    raise ValueError("Dosya okunamadı. Desteklenen formatlar: CSV, TXT, XLSX, XLS")
 
 
-def clean_amount(value):
+def clean_amount_value(value):
     """
-    Tutar değerini temizler ve sayıya çevrilmeye hazır hale getirir
+    Tutar değerini temizler ve sayıya çevirir.
     
     Args:
-        value: Ham tutar değeri
-        
-    Returns:
-        str: Temizlenmiş tutar
-    """
-    if not isinstance(value, str):
-        return str(value)
+        value (str): Ham tutar değeri
     
-    # Tırnak işaretlerini kaldır
-    value = value.replace('"', '').replace("'", '').strip()
+    Returns:
+        float: Temizlenmiş tutar
+    """
+    if pd.isna(value) or value == "":
+        return 0.0
+    
+    value_str = str(value)
+    
+    # Tırnak işaretlerini temizle
+    value_str = value_str.replace('"', '').replace("'", "").strip()
     
     # Virgülü noktaya çevir
-    value = value.replace(',', '.')
+    value_str = value_str.replace(',', '.')
     
     # Sadece sayı ve nokta bırak
-    value = re.sub(r'[^\d.]', '', value)
+    value_str = re.sub(r'[^\d.]', '', value_str)
     
-    return value if value else "0"
+    try:
+        return float(value_str)
+    except ValueError:
+        return 0.0
 
 
-def validate_tc_kimlik(tc_no):
+def clean_tc_number(value):
     """
-    TC Kimlik numarasının geçerliliğini kontrol eder
+    TC Kimlik numarasını temizler ve doğrular.
     
     Args:
-        tc_no: TC Kimlik numarası (string)
-        
+        value (str): Ham TC değeri
+    
     Returns:
-        bool: Geçerli mi?
+        str: Temizlenmiş 11 haneli TC (geçerli değilse boş string)
     """
-    if not isinstance(tc_no, str):
-        tc_no = str(tc_no)
+    if pd.isna(value):
+        return ""
+    
+    value_str = str(value).strip()
+    
+    # Sadece rakamları al
+    digits = re.sub(r'\D', '', value_str)
     
     # 11 hane kontrolü
-    if len(tc_no) != 11:
-        return False
+    if len(digits) == 11:
+        return digits
     
-    # Sadece rakam kontrolü
-    if not tc_no.isdigit():
-        return False
-    
-    # İlk hane 0 olamaz
-    if tc_no[0] == '0':
-        return False
-    
-    return True
+    return ""
 
 
-def process_legacy_format(file_content):
+def apply_column_mapping(df_raw, column_mapping):
     """
-    Eski format için regex tabanlı veri çıkarma (geriye dönük uyumluluk)
+    Kullanıcının yaptığı sütun eşleştirmesine göre veriyi işler.
     
     Args:
-        file_content: Ham dosya içeriği (string)
-        
+        df_raw (pd.DataFrame): Ham veri
+        column_mapping (dict): Sütun eşleştirme haritası
+    
     Returns:
-        DataFrame: İşlenmiş veri
+        pd.DataFrame: Temizlenmiş ve yapılandırılmış veri
     """
-    data_rows = []
-    lines = file_content.splitlines()
     
-    for line in lines:
-        # TC Kimlik bul (11 hane)
-        tc_match = re.search(r'(?<!\d)\d{11}(?!\d)', line)
-        
-        if tc_match:
-            try:
-                tc_value = tc_match.group(0)
-                
-                # Ayırıcıyı belirle
-                if ";" in line:
-                    parts = line.split(';')
-                else:
-                    parts = line.split(',')
-                
-                clean_parts = [p.strip() for p in parts if p.strip()]
-                
-                try:
-                    tc_index = clean_parts.index(tc_value)
-                except ValueError:
-                    continue
-                
-                # Tutar
-                tutar = "0"
-                if len(clean_parts) > tc_index + 1:
-                    raw_tutar = clean_parts[tc_index + 1]
-                    tutar = clean_amount(raw_tutar)
-                
-                # Soyadı
-                soyadi = ""
-                if tc_index > 0:
-                    soyadi = fix_turkish_chars(clean_parts[tc_index - 1])
-                
-                # Adı
-                adi = ""
-                if tc_index > 1:
-                    adi = fix_turkish_chars(clean_parts[tc_index - 2])
-                
-                # Üye No
-                uye_no = ""
-                if tc_index > 2:
-                    uye_no = clean_parts[tc_index - 3]
-                else:
-                    uye_no = clean_parts[0] if tc_index > 0 else ""
-                
-                row_dict = {
-                    "Üye No": uye_no,
-                    "Adı": adi,
-                    "Soyadı": soyadi,
-                    "TC Kimlik No": tc_value,
-                    "Aidat Tutarı": tutar
-                }
-                data_rows.append(row_dict)
-                
-            except Exception:
-                continue
+    processed_data = []
     
-    if data_rows:
-        df = pd.DataFrame(data_rows)
+    for idx, row in df_raw.iterrows():
         try:
-            df["Aidat Tutarı"] = pd.to_numeric(df["Aidat Tutarı"])
-        except:
-            pass
-        return df
+            # Her alan için mapping'e göre veriyi al
+            member_no = str(row[column_mapping.get('member_no', 0)]).strip() if 'member_no' in column_mapping else ""
+            first_name = str(row[column_mapping.get('first_name', 0)]).strip() if 'first_name' in column_mapping else ""
+            last_name = str(row[column_mapping.get('last_name', 0)]).strip() if 'last_name' in column_mapping else ""
+            tc_no = str(row[column_mapping.get('tc_no', 0)]).strip() if 'tc_no' in column_mapping else ""
+            amount = str(row[column_mapping.get('amount', 0)]).strip() if 'amount' in column_mapping else "0"
+            
+            # Türkçe karakter düzeltmeleri
+            first_name = fix_turkish_chars(first_name)
+            last_name = fix_turkish_chars(last_name)
+            
+            # TC temizle
+            tc_no = clean_tc_number(tc_no)
+            
+            # Tutar temizle
+            amount_clean = clean_amount_value(amount)
+            
+            # Geçerli TC varsa ekle
+            if tc_no and len(tc_no) == 11:
+                processed_data.append({
+                    "Üye No": member_no,
+                    "Adı": first_name,
+                    "Soyadı": last_name,
+                    "TC Kimlik No": tc_no,
+                    "Aidat Tutarı": amount_clean
+                })
+        
+        except Exception:
+            # Hatalı satırları atla
+            continue
     
-    return pd.DataFrame()
+    # DataFrame oluştur
+    df_clean = pd.DataFrame(processed_data)
+    
+    return df_clean
+
+
+def detect_file_structure(df_raw, sample_size=50):
+    """
+    Ham veriyi analiz eder ve sütun yapısı hakkında bilgi verir.
+    
+    Args:
+        df_raw (pd.DataFrame): Ham veri
+        sample_size (int): Analiz edilecek satır sayısı
+    
+    Returns:
+        dict: Dosya yapısı bilgileri
+    """
+    
+    info = {
+        'total_rows': len(df_raw),
+        'total_columns': len(df_raw.columns),
+        'has_tc_column': False,
+        'tc_column_index': None,
+        'has_amount_column': False,
+        'sample_data': df_raw.head(sample_size)
+    }
+    
+    # TC Kimlik içeren sütun var mı?
+    for col_idx, col in enumerate(df_raw.columns):
+        sample_values = df_raw[col].astype(str).head(sample_size)
+        
+        # TC pattern (11 hane)
+        tc_count = sample_values.str.match(r'^\d{11}$').sum()
+        
+        if tc_count > sample_size * 0.5:  # %50'den fazlası TC ise
+            info['has_tc_column'] = True
+            info['tc_column_index'] = col_idx
+            break
+    
+    # Tutar içeren sütun var mı?
+    for col in df_raw.columns:
+        sample_values = df_raw[col].astype(str).head(sample_size)
+        
+        # Sayısal pattern
+        numeric_count = sample_values.str.match(r'^[\d\.,]+$').sum()
+        
+        if numeric_count > sample_size * 0.5:
+            info['has_amount_column'] = True
+            break
+    
+    return info
 
