@@ -54,24 +54,26 @@ def auto_detect_columns(df):
     columns_lower = [str(col).lower() for col in df.columns]
     
     for idx, col in enumerate(columns_lower):
-        col_clean = fix_turkish_chars(col).strip()
+        col_clean = fix_turkish_chars(col).strip().lower()
         
         # TC Kimlik No tespiti
         if any(keyword in col_clean for keyword in ['tc', 'kimlik', 't.c', 'tcno', 'tckimlik']):
             mapping['tc_no'] = df.columns[idx]
         
         # Adı Soyadı (birleşik) tespiti - hem adı hem soyadı için kullan
-        elif 'adı' in col_clean and 'soyad' in col_clean:
+        # Daha kapsamlı kontrol
+        if ('ad' in col_clean or 'adı' in col_clean or 'adi' in col_clean) and ('soyad' in col_clean):
             # Birleşik kolon - ikisi için de kullan
             mapping['adi'] = df.columns[idx]
             mapping['soyadi'] = df.columns[idx]
+            continue
         
         # Ad tespiti (ayrı kolon)
-        elif any(keyword in col_clean for keyword in ['adı', 'adi', 'ad ', 'isim', 'name']) and 'soyad' not in col_clean:
+        if mapping['adi'] is None and any(keyword in col_clean for keyword in ['adı', 'adi', 'ad ', 'isim', 'name']) and 'soyad' not in col_clean:
             mapping['adi'] = df.columns[idx]
         
         # Soyad tespiti (ayrı kolon)
-        elif any(keyword in col_clean for keyword in ['soyad', 'soyadı', 'surname']):
+        if mapping['soyadi'] is None and any(keyword in col_clean for keyword in ['soyad', 'soyadı', 'surname']):
             mapping['soyadi'] = df.columns[idx]
         
         # Üye No / Sıra No tespiti
@@ -153,7 +155,11 @@ def clean_data_with_mapping(df, column_mapping):
                         tutar = "0"
             
             # Ad ve Soyad - birleşik veya ayrı olabilir
-            if column_mapping['adi'] == column_mapping['soyadi'] and column_mapping['adi']:
+            # Birleşik mi kontrol et: ya ikisi de aynı kolona işaret ediyor, ya da sadece adi var
+            is_combined = (column_mapping['adi'] and column_mapping['soyadi'] and 
+                          column_mapping['adi'] == column_mapping['soyadi'])
+            
+            if is_combined:
                 # Birleşik kolon (Adı Soyadı)
                 full_name = str(row[column_mapping['adi']]) if pd.notna(row.get(column_mapping['adi'])) else ""
                 full_name = fix_turkish_chars(full_name).strip()
@@ -163,13 +169,27 @@ def clean_data_with_mapping(df, column_mapping):
                 adi = name_parts[0] if len(name_parts) > 0 else ""
                 soyadi = name_parts[1] if len(name_parts) > 1 else ""
             else:
-                # Ayrı kolonlar
-                adi = str(row[column_mapping['adi']]) if column_mapping['adi'] and pd.notna(row.get(column_mapping['adi'])) else ""
-                soyadi = str(row[column_mapping['soyadi']]) if column_mapping['soyadi'] and pd.notna(row.get(column_mapping['soyadi'])) else ""
+                # Ayrı kolonlar (veya sadece biri var)
+                if column_mapping['adi']:
+                    adi_raw = str(row[column_mapping['adi']]) if pd.notna(row.get(column_mapping['adi'])) else ""
+                    adi_raw = fix_turkish_chars(adi_raw).strip()
+                    
+                    # Eğer soyadi kolonu yoksa ve adi'de boşluk varsa, ayır
+                    if not column_mapping['soyadi'] and ' ' in adi_raw:
+                        name_parts = adi_raw.split(maxsplit=1)
+                        adi = name_parts[0]
+                        soyadi = name_parts[1] if len(name_parts) > 1 else ""
+                    else:
+                        adi = adi_raw
+                        soyadi = ""
+                else:
+                    adi = ""
+                    soyadi = ""
                 
-                # Türkçe karakter düzeltmeleri
-                adi = fix_turkish_chars(adi).strip()
-                soyadi = fix_turkish_chars(soyadi).strip()
+                # Eğer soyadi kolonu varsa
+                if column_mapping['soyadi']:
+                    soyadi = str(row[column_mapping['soyadi']]) if pd.notna(row.get(column_mapping['soyadi'])) else ""
+                    soyadi = fix_turkish_chars(soyadi).strip()
             
             # TC No temizle (sadece rakamlar)
             tc_no = re.sub(r'\D', '', tc_no)
@@ -383,12 +403,20 @@ if uploaded_file is not None:
             sample_data = {}
             for key, col_name in column_mapping.items():
                 if col_name:
-                    sample_values = df_raw[col_name].head(3).tolist()
-                    sample_data[key.upper()] = f"{col_name}: {sample_values}"
+                    # İlk 5 satırdan örnek al (NaN olmayanlar)
+                    sample_values = []
+                    for val in df_raw[col_name].head(5):
+                        if pd.notna(val):
+                            sample_values.append(f"'{val}'")
+                        else:
+                            sample_values.append("NaN")
+                    sample_data[key.upper()] = f"📍 {col_name}: [{', '.join(sample_values)}]"
             
             if sample_data:
                 for key, val in sample_data.items():
                     st.text(val)
+            else:
+                st.info("Hiç kolon seçilmemiş.")
             
             # İşleme butonu
             if st.button("🚀 Veriyi İşle", type="primary", use_container_width=True):
