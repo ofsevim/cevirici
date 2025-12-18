@@ -106,11 +106,15 @@ def render_column_mapper(df_sample, required_columns):
     
     # Otomatik algılama önerisi göster
     with st.expander("💡 Akıllı Öneri", expanded=False):
-        suggestions = auto_suggest_columns(df_sample, required_columns)
+        suggestions = auto_suggest_columns(df_sample, required_columns, use_combined_name)
         if suggestions:
             st.markdown("**Önerilen Eşleşmeler:**")
             for key, col_idx in suggestions.items():
-                display_name = [k for k, v in required_columns.items() if v == key][0]
+                if key == 'full_name':
+                    display_name = "Adı Soyadı (Birleşik)"
+                else:
+                    matching_items = [k for k, v in required_columns.items() if v == key]
+                    display_name = matching_items[0] if matching_items else key
                 st.markdown(f"- `{display_name}` → **Sütun {col_idx}**")
             
             if st.button("🎯 Önerileri Uygula", use_container_width=True):
@@ -121,27 +125,19 @@ def render_column_mapper(df_sample, required_columns):
     return mapping
 
 
-def auto_suggest_columns(df, required_columns):
+def auto_suggest_columns(df, required_columns, use_combined_name=False):
     """
     Sütun içeriğine göre otomatik eşleştirme önerisi yapar.
     
     Args:
         df (pd.DataFrame): Ham veri
         required_columns (dict): Gerekli sütunlar
+        use_combined_name (bool): Ad-Soyad birleşik mi?
     
     Returns:
         dict: Önerilen eşleşmeler {internal_key: column_index}
     """
     suggestions = {}
-    
-    # Arama anahtar kelimeleri
-    keywords = {
-        'member_no': ['üye', 'no', 'uye', 'member', 'id', 'sicil'],
-        'first_name': ['ad', 'adi', 'name', 'first', 'isim'],
-        'last_name': ['soyad', 'soyadi', 'surname', 'last'],
-        'tc_no': ['tc', 'kimlik', 'tckimlik', 'identity', 'tcno'],
-        'amount': ['tutar', 'aidat', 'miktar', 'amount', 'price', 'fiyat', 'ücret']
-    }
     
     # Her sütunu analiz et
     for col_idx in range(len(df.columns)):
@@ -151,32 +147,44 @@ def auto_suggest_columns(df, required_columns):
         # TC Kimlik tespiti (11 haneli sayılar)
         if 'tc_no' not in suggestions:
             tc_pattern_count = sample_values.str.match(r'^\d{11}$').sum()
-            if tc_pattern_count >= 10:  # En az 10 satır TC formatında
+            if tc_pattern_count >= 5:  # En az 5 satır TC formatında
                 suggestions['tc_no'] = col_idx
                 continue
         
         # Tutar tespiti (sayısal değerler, virgül/nokta içeren)
         if 'amount' not in suggestions:
             amount_pattern_count = sample_values.str.match(r'^[\d\.,]+$').sum()
-            if amount_pattern_count >= 10:
+            if amount_pattern_count >= 5:
                 suggestions['amount'] = col_idx
                 continue
         
-        # Üye No tespiti (5-6 haneli sayılar genelde)
+        # Üye No / Sıra No tespiti (1-6 haneli sayılar)
         if 'member_no' not in suggestions:
-            member_pattern_count = sample_values.str.match(r'^\d{4,7}$').sum()
-            if member_pattern_count >= 10:
+            member_pattern_count = sample_values.str.match(r'^\d{1,7}$').sum()
+            if member_pattern_count >= 5:
                 suggestions['member_no'] = col_idx
                 continue
         
-        # İsim tespiti (2-3 kelime uzunluğu, harf karakterler)
-        if 'first_name' not in suggestions or 'last_name' not in suggestions:
-            name_pattern_count = sample_values.str.match(r'^[A-Za-zÇçĞğİıÖöŞşÜü\s]{2,30}$').sum()
-            if name_pattern_count >= 10:
-                if 'first_name' not in suggestions:
-                    suggestions['first_name'] = col_idx
-                elif 'last_name' not in suggestions:
-                    suggestions['last_name'] = col_idx
+        # İsim tespiti (2 veya daha fazla kelime, boşluk içeren)
+        if use_combined_name:
+            if 'full_name' not in suggestions:
+                # Birleşik isim tespiti (boşluk içeren isimler)
+                combined_name_count = sample_values.str.match(r'^[A-Za-zÇçĞğİıÖöŞşÜü]+\s+[A-Za-zÇçĞğİıÖöŞşÜü]+').sum()
+                if combined_name_count >= 5:
+                    suggestions['full_name'] = col_idx
+                    continue
+        else:
+            # Ayrı isim tespiti
+            if 'first_name' not in suggestions or 'last_name' not in suggestions:
+                name_pattern_count = sample_values.str.match(r'^[A-Za-zÇçĞğİıÖöŞşÜü\s]{2,30}$').sum()
+                if name_pattern_count >= 5:
+                    # Boşluk içermeyen veya tek kelime ise muhtemelen tek isim
+                    single_word_count = sample_values.str.match(r'^[A-Za-zÇçĞğİıÖöŞşÜü]+$').sum()
+                    if single_word_count >= 5:
+                        if 'first_name' not in suggestions:
+                            suggestions['first_name'] = col_idx
+                        elif 'last_name' not in suggestions:
+                            suggestions['last_name'] = col_idx
     
     return suggestions
 
