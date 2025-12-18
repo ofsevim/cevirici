@@ -135,6 +135,37 @@ def clean_amount_value(value):
         return 0.0
 
 
+def split_full_name(full_name):
+    """
+    Tam adı (Ad Soyad) ayrı ayrı ad ve soyad olarak ayırır.
+    
+    Args:
+        full_name (str): Tam ad (örn: "Ahmet Yılmaz" veya "Nazire Asil")
+    
+    Returns:
+        tuple: (first_name, last_name)
+    """
+    if not full_name or full_name in ['None', 'nan', 'NaN', '']:
+        return "", ""
+    
+    full_name = str(full_name).strip()
+    
+    # Boşluğa göre ayır
+    parts = full_name.split()
+    
+    if len(parts) == 0:
+        return "", ""
+    elif len(parts) == 1:
+        return parts[0], ""
+    elif len(parts) == 2:
+        return parts[0], parts[1]
+    else:
+        # 2'den fazla kelime varsa, son kelime soyad, geri kalanı ad
+        first_name = " ".join(parts[:-1])
+        last_name = parts[-1]
+        return first_name, last_name
+
+
 def clean_tc_number(value):
     """
     TC Kimlik numarasını temizler ve doğrular.
@@ -182,6 +213,8 @@ def apply_column_mapping(df_raw, column_mapping):
         'sample_skipped': []
     }
     
+    use_combined_name = column_mapping.get('use_combined_name', False)
+    
     for idx, row in df_raw.iterrows():
         try:
             # Tamamen boş satır kontrolü
@@ -191,10 +224,18 @@ def apply_column_mapping(df_raw, column_mapping):
             
             # Her alan için mapping'e göre veriyi al
             member_no = str(row[column_mapping.get('member_no', 0)]).strip() if 'member_no' in column_mapping else ""
-            first_name = str(row[column_mapping.get('first_name', 0)]).strip() if 'first_name' in column_mapping else ""
-            last_name = str(row[column_mapping.get('last_name', 0)]).strip() if 'last_name' in column_mapping else ""
             tc_no = str(row[column_mapping.get('tc_no', 0)]).strip() if 'tc_no' in column_mapping else ""
             amount = str(row[column_mapping.get('amount', 0)]).strip() if 'amount' in column_mapping else "0"
+            
+            # Ad-Soyad işleme
+            if use_combined_name and 'full_name' in column_mapping:
+                # Birleşik ad/soyad varsa ayır
+                full_name = str(row[column_mapping.get('full_name', 0)]).strip()
+                first_name, last_name = split_full_name(full_name)
+            else:
+                # Ayrı sütunlar varsa direkt al
+                first_name = str(row[column_mapping.get('first_name', 0)]).strip() if 'first_name' in column_mapping else ""
+                last_name = str(row[column_mapping.get('last_name', 0)]).strip() if 'last_name' in column_mapping else ""
             
             # None veya nan kontrolü
             if member_no in ['None', 'nan', 'NaN']:

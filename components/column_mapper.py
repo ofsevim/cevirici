@@ -20,6 +20,14 @@ def render_column_mapper(df_sample, required_columns):
     """
     
     st.markdown("### 🔄 Sütun Eşleştirme")
+    
+    # Ad-Soyad birleşik mi kontrolü
+    use_combined_name = st.checkbox(
+        "📝 Ad ve Soyad tek sütunda (örn: 'Ahmet Yılmaz')",
+        value=False,
+        help="İsim ve soyisim aynı sütundaysa bu seçeneği işaretleyin"
+    )
+    
     st.info("👇 Dosyanızdaki sütunları uygun alanlara eşleştirin")
     
     # Ham verinin önizlemesi
@@ -58,9 +66,16 @@ def render_column_mapper(df_sample, required_columns):
     col_left, col_right = st.columns(2)
     
     mapping = {}
+    mapping['use_combined_name'] = use_combined_name
+    
+    # Eğer birleşik ad kullanılıyorsa, first_name ve last_name'i atlayıp full_name ekle
+    if use_combined_name:
+        items = [(k, v) for k, v in required_columns.items() if v not in ['first_name', 'last_name']]
+        items.insert(1, ("Adı Soyadı (Birleşik)", "full_name"))
+    else:
+        items = list(required_columns.items())
     
     # İki sütuna bölerek selectbox'ları yerleştir
-    items = list(required_columns.items())
     mid_point = (len(items) + 1) // 2
     
     with col_left:
