@@ -70,12 +70,13 @@ def parse_raw_data(file_content):
 # -----------------------------------------------------------------------------
 # 3. VERİ TEMİZLEME FONKSİYONU (Kolon haritası ile)
 # -----------------------------------------------------------------------------
-def clean_data_with_mapping(raw_data, column_mapping, id_column_name):
+def clean_data_with_mapping(raw_data, column_mapping, id_column_name, same_column=False):
     """
     Args:
         raw_data: Ham veri satırları (liste)
         column_mapping: Kolon indekslerinin haritası
         id_column_name: ID kolonu adı (Üye No / Personel No)
+        same_column: Ad ve Soyad aynı kolonda mı?
     """
     cleaned_rows = []
     
@@ -91,20 +92,37 @@ def clean_data_with_mapping(raw_data, column_mapping, id_column_name):
             if not tc_value:
                 continue
             
+            # ID No
+            id_no = row[column_mapping['id_no']] if column_mapping['id_no'] < len(row) else ""
+            
+            # Ad-Soyad aynı kolonda mı?
+            if same_column:
+                full_name = row[column_mapping['adi']] if column_mapping['adi'] < len(row) else ""
+                full_name = str(full_name).strip()
+                
+                # Boşlukla ayır
+                name_parts = full_name.split(maxsplit=1)
+                adi = name_parts[0] if len(name_parts) > 0 else ""
+                soyadi = name_parts[1] if len(name_parts) > 1 else ""
+            else:
+                adi = row[column_mapping['adi']] if column_mapping['adi'] < len(row) else ""
+                soyadi = row[column_mapping['soyadi']] if column_mapping['soyadi'] < len(row) else ""
+            
             # Kolonları eşleştir
             row_dict = {
-                id_column_name: row[column_mapping['id_no']] if column_mapping['id_no'] < len(row) else "",
-                "Adı": row[column_mapping['adi']] if column_mapping['adi'] < len(row) else "",
-                "Soyadı": row[column_mapping['soyadi']] if column_mapping['soyadi'] < len(row) else "",
-                "TC Kimlik No": tc_value,
-                "Aidat Tutarı": ""
+                id_column_name: id_no,
+                "Adı": adi,
+                "Soyadı": soyadi,
+                "TC Kimlik No": tc_value
             }
             
             # Tutar (varsa)
-            if column_mapping['tutar'] < len(row):
+            if column_mapping['tutar'] >= 0 and column_mapping['tutar'] < len(row):
                 raw_tutar = row[column_mapping['tutar']]
                 raw_tutar = str(raw_tutar).replace('"', '').replace("'", "").replace(',', '.')
                 row_dict["Aidat Tutarı"] = raw_tutar
+            else:
+                row_dict["Aidat Tutarı"] = "0"
             
             cleaned_rows.append(row_dict)
             
@@ -183,43 +201,102 @@ if uploaded_file is not None:
                 st.subheader("🗂️ Kolon Eşleştirme")
                 st.info("👉 Aşağıda her bilginin hangi kolonda olduğunu seçin (Kolon 0'dan başlar)")
                 
-                col1, col2, col3, col4 = st.columns(4)
+                # Ad-Soyad aynı kolonda mı?
+                same_column = st.checkbox(
+                    "✅ Ad ve Soyad aynı kolonda (örn: 'Ahmet Yılmaz')",
+                    value=False,
+                    help="İşaretlerseniz, tek bir kolon seçip otomatik olarak ad-soyad ayırması yapılır"
+                )
                 
-                with col1:
-                    id_col = st.number_input(
-                        f"📌 {id_column_choice}",
-                        min_value=0,
-                        max_value=max_cols-1,
-                        value=0,
-                        help="Üye veya Personel No'nun bulunduğu kolon"
-                    )
+                # Tutar var mı?
+                has_amount = st.checkbox(
+                    "💰 Dosyada Aidat Tutarı kolonu var",
+                    value=True,
+                    help="İşaretlemeyin eğer dosyada tutar bilgisi yoksa"
+                )
                 
-                with col2:
-                    name_col = st.number_input(
-                        "👤 Adı",
-                        min_value=0,
-                        max_value=max_cols-1,
-                        value=min(1, max_cols-1),
-                        help="İsmin bulunduğu kolon"
-                    )
+                st.markdown("##### Kolonları Seçin:")
                 
-                with col3:
-                    surname_col = st.number_input(
-                        "👥 Soyadı",
-                        min_value=0,
-                        max_value=max_cols-1,
-                        value=min(2, max_cols-1),
-                        help="Soyadının bulunduğu kolon"
-                    )
+                if same_column:
+                    # Ad-Soyad birlikte
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        id_col = st.number_input(
+                            f"📌 {id_column_choice}",
+                            min_value=0,
+                            max_value=max_cols-1,
+                            value=0,
+                            help="Üye veya Personel No'nun bulunduğu kolon"
+                        )
+                    
+                    with col2:
+                        name_col = st.number_input(
+                            "👤 Ad Soyad (Birlikte)",
+                            min_value=0,
+                            max_value=max_cols-1,
+                            value=min(1, max_cols-1),
+                            help="Ad ve soyadın birlikte bulunduğu kolon"
+                        )
+                        surname_col = name_col  # Aynı kolon
+                    
+                    with col3:
+                        if has_amount:
+                            amount_col = st.number_input(
+                                "💰 Aidat Tutarı",
+                                min_value=0,
+                                max_value=max_cols-1,
+                                value=min(2, max_cols-1),
+                                help="Tutar bilgisinin bulunduğu kolon"
+                            )
+                        else:
+                            amount_col = -1  # Yok
                 
-                with col4:
-                    amount_col = st.number_input(
-                        "💰 Aidat Tutarı",
-                        min_value=0,
-                        max_value=max_cols-1,
-                        value=min(4, max_cols-1),
-                        help="Tutar bilgisinin bulunduğu kolon"
-                    )
+                else:
+                    # Ad-Soyad ayrı
+                    if has_amount:
+                        col1, col2, col3, col4 = st.columns(4)
+                    else:
+                        col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        id_col = st.number_input(
+                            f"📌 {id_column_choice}",
+                            min_value=0,
+                            max_value=max_cols-1,
+                            value=0,
+                            help="Üye veya Personel No'nun bulunduğu kolon"
+                        )
+                    
+                    with col2:
+                        name_col = st.number_input(
+                            "👤 Adı",
+                            min_value=0,
+                            max_value=max_cols-1,
+                            value=min(1, max_cols-1),
+                            help="İsmin bulunduğu kolon"
+                        )
+                    
+                    with col3:
+                        surname_col = st.number_input(
+                            "👥 Soyadı",
+                            min_value=0,
+                            max_value=max_cols-1,
+                            value=min(2, max_cols-1),
+                            help="Soyadının bulunduğu kolon"
+                        )
+                    
+                    if has_amount:
+                        with col4:
+                            amount_col = st.number_input(
+                                "💰 Aidat Tutarı",
+                                min_value=0,
+                                max_value=max_cols-1,
+                                value=min(4, max_cols-1),
+                                help="Tutar bilgisinin bulunduğu kolon"
+                            )
+                    else:
+                        amount_col = -1  # Yok
                 
                 # Temizleme butonu
                 if st.button("🚀 Veriyi Temizle ve Düzenle", type="primary", use_container_width=True):
@@ -231,7 +308,7 @@ if uploaded_file is not None:
                         'tutar': amount_col
                     }
                     
-                    df_clean = clean_data_with_mapping(raw_data, column_mapping, id_column_choice)
+                    df_clean = clean_data_with_mapping(raw_data, column_mapping, id_column_choice, same_column=same_column)
                     
                     if not df_clean.empty:
                         st.success(f"✨ Başarılı! Toplam {len(df_clean)} kişi düzenlendi.")
