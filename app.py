@@ -188,14 +188,23 @@ if uploaded_file is not None:
             else:
                 st.success(f"✅ {len(raw_data)} satır bulundu!")
                 
-                # Örnek veri göster
-                st.subheader("🔍 Ham Veri Önizlemesi (İlk 3 Satır)")
-                preview_df = pd.DataFrame(raw_data[:3])
-                preview_df.columns = [f"Kolon {i}" for i in range(len(preview_df.columns))]
+                # Kolon sayısını bul (en fazla kolona sahip satır)
+                max_cols = max(len(row) for row in raw_data)
+                
+                # Örnek veri göster - tüm kolonları göstermek için en uzun satırları seç
+                st.subheader("🔍 Ham Veri Önizlemesi (İlk 5 Satır)")
+                
+                # İlk 5 satırı normalize et (eksik kolonları boş string ile doldur)
+                preview_data = []
+                for row in raw_data[:5]:
+                    normalized_row = list(row) + [''] * (max_cols - len(row))
+                    preview_data.append(normalized_row)
+                
+                preview_df = pd.DataFrame(preview_data)
+                preview_df.columns = [f"Kolon {i}" for i in range(max_cols)]
                 st.dataframe(preview_df, use_container_width=True)
                 
-                # Kolon sayısı
-                max_cols = max(len(row) for row in raw_data)
+                st.info(f"📊 Toplam {max_cols} kolon tespit edildi.")
                 
                 st.markdown("---")
                 st.subheader("🗂️ Kolon Eşleştirme")
@@ -206,13 +215,6 @@ if uploaded_file is not None:
                     "✅ Ad ve Soyad aynı kolonda (örn: 'Ahmet Yılmaz')",
                     value=False,
                     help="İşaretlerseniz, tek bir kolon seçip otomatik olarak ad-soyad ayırması yapılır"
-                )
-                
-                # Tutar var mı?
-                has_amount = st.checkbox(
-                    "💰 Dosyada Aidat Tutarı kolonu var",
-                    value=True,
-                    help="İşaretlemeyin eğer dosyada tutar bilgisi yoksa"
                 )
                 
                 st.markdown("##### Kolonları Seçin:")
@@ -241,23 +243,17 @@ if uploaded_file is not None:
                         surname_col = name_col  # Aynı kolon
                     
                     with col3:
-                        if has_amount:
-                            amount_col = st.number_input(
-                                "💰 Aidat Tutarı",
-                                min_value=0,
-                                max_value=max_cols-1,
-                                value=min(2, max_cols-1),
-                                help="Tutar bilgisinin bulunduğu kolon"
-                            )
-                        else:
-                            amount_col = -1  # Yok
+                        amount_col = st.number_input(
+                            "💰 Aidat Tutarı",
+                            min_value=0,
+                            max_value=max_cols-1,
+                            value=min(2, max_cols-1),
+                            help="Tutar bilgisinin bulunduğu kolon"
+                        )
                 
                 else:
                     # Ad-Soyad ayrı
-                    if has_amount:
-                        col1, col2, col3, col4 = st.columns(4)
-                    else:
-                        col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
                         id_col = st.number_input(
@@ -286,17 +282,14 @@ if uploaded_file is not None:
                             help="Soyadının bulunduğu kolon"
                         )
                     
-                    if has_amount:
-                        with col4:
-                            amount_col = st.number_input(
-                                "💰 Aidat Tutarı",
-                                min_value=0,
-                                max_value=max_cols-1,
-                                value=min(4, max_cols-1),
-                                help="Tutar bilgisinin bulunduğu kolon"
-                            )
-                    else:
-                        amount_col = -1  # Yok
+                    with col4:
+                        amount_col = st.number_input(
+                            "💰 Aidat Tutarı",
+                            min_value=0,
+                            max_value=max_cols-1,
+                            value=min(4, max_cols-1),
+                            help="Tutar bilgisinin bulunduğu kolon"
+                        )
                 
                 # Temizleme butonu
                 if st.button("🚀 Veriyi Temizle ve Düzenle", type="primary", use_container_width=True):
