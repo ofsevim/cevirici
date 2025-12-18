@@ -79,9 +79,10 @@ def auto_detect_columns(df):
             if mapping['uye_no'] is None:  # İlk bulunan
                 mapping['uye_no'] = df.columns[idx]
         
-        # Tutar tespiti
-        elif any(keyword in col_clean for keyword in ['tutar', 'aidat', 'miktar', 'amount', 'ücret', 'ucret']):
-            mapping['tutar'] = df.columns[idx]
+        # Tutar tespiti (daha geniş arama)
+        if mapping['tutar'] is None:  # Henüz bulunmadıysa
+            if any(keyword in col_clean for keyword in ['tutar', 'aidat', 'miktar', 'amount', 'ücret', 'ucret', 'fiyat', 'bedel', 'price']):
+                mapping['tutar'] = df.columns[idx]
     
     return mapping
 
@@ -140,7 +141,16 @@ def clean_data_with_mapping(df, column_mapping):
             # Mapping'den kolonları al
             uye_no = str(row[column_mapping['uye_no']]) if column_mapping['uye_no'] and pd.notna(row.get(column_mapping['uye_no'])) else ""
             tc_no = str(row[column_mapping['tc_no']]) if column_mapping['tc_no'] and pd.notna(row.get(column_mapping['tc_no'])) else ""
-            tutar = str(row[column_mapping['tutar']]) if column_mapping['tutar'] and pd.notna(row.get(column_mapping['tutar'])) else "0"
+            
+            # Tutar - daha dikkatli al
+            tutar = "0"
+            if column_mapping['tutar'] and column_mapping['tutar'] in row.index:
+                tutar_val = row[column_mapping['tutar']]
+                if pd.notna(tutar_val):
+                    tutar = str(tutar_val).strip()
+                    # Boş string kontrolü
+                    if tutar == '' or tutar.lower() == 'nan':
+                        tutar = "0"
             
             # Ad ve Soyad - birleşik veya ayrı olabilir
             if column_mapping['adi'] == column_mapping['soyadi'] and column_mapping['adi']:
@@ -168,10 +178,13 @@ def clean_data_with_mapping(df, column_mapping):
             if len(tc_no) != 11:
                 continue
             
-            # Tutar temizle
-            tutar = tutar.replace('"', '').replace("'", "").replace(',', '.')
-            # Fazladan boşlukları temizle
-            tutar = tutar.strip()
+            # Tutar temizle ve formatla
+            # Virgülü nokta yap, tırnak ve diğer karakterleri temizle
+            tutar = tutar.replace('"', '').replace("'", "").replace(',', '.').replace(' ', '')
+            # Sadece rakam, nokta ve eksi işareti bırak
+            tutar = re.sub(r'[^\d.\-]', '', tutar)
+            if tutar == '' or tutar == '.':
+                tutar = "0"
             
             row_dict = {
                 "Üye No": uye_no.strip(),
@@ -183,6 +196,8 @@ def clean_data_with_mapping(df, column_mapping):
             data_rows.append(row_dict)
             
         except Exception as e:
+            # Debug için hata mesajını göster
+            st.warning(f"Satır {idx} işlenirken hata: {str(e)}")
             continue
     
     # DataFrame oluştur
@@ -191,7 +206,8 @@ def clean_data_with_mapping(df, column_mapping):
     # Tutarı sayıya çevir
     try:
         df_clean["Aidat Tutarı"] = pd.to_numeric(df_clean["Aidat Tutarı"], errors='coerce').fillna(0)
-    except:
+    except Exception as e:
+        st.warning(f"Tutar dönüştürme hatası: {str(e)}")
         pass
     
     return df_clean
@@ -234,11 +250,11 @@ if uploaded_file is not None:
                     new_cols = []
                     for col in df_raw.columns:
                         col_str = str(col).strip()
-                        # "Unnamed" kolonları temizle
-                        if 'Unnamed' not in col_str and col_str != 'nan':
-                            new_cols.append(col_str)
-                        else:
-                            new_cols.append(col_str)
+                        # Türkçe karakter düzelt
+                        col_str = fix_turkish_chars(col_str)
+                        # Fazladan boşlukları ve özel karakterleri temizle
+                        col_str = ' '.join(col_str.split())
+                        new_cols.append(col_str)
                     df_raw.columns = new_cols
                     
                     # TC olan ilk satırı bul (veri başlangıcı)
@@ -362,11 +378,33 @@ if uploaded_file is not None:
                 'tutar': None if tutar_col == '(Boş)' else tutar_col
             }
             
+            # Örnek veri göster
+            st.subheader("📌 Seçili Kolonlardan Örnek Veriler")
+            sample_data = {}
+            for key, col_name in column_mapping.items():
+                if col_name:
+                    sample_values = df_raw[col_name].head(3).tolist()
+                    sample_data[key.upper()] = f"{col_name}: {sample_values}"
+            
+            if sample_data:
+                for key, val in sample_data.items():
+                    st.text(val)
+            
             # İşleme butonu
             if st.button("🚀 Veriyi İşle", type="primary", use_container_width=True):
                 if column_mapping['tc_no'] is None:
                     st.error("❌ TC Kimlik No kolonu seçilmesi zorunludur!")
                 else:
+                    # Debug: Mapping bilgisi göster
+                    with st.expander("🔍 Kolon Eşleştirme Detayları", expanded=False):
+                        st.json({
+                            "Üye No": column_mapping['uye_no'],
+                            "Adı": column_mapping['adi'],
+                            "Soyadı": column_mapping['soyadi'],
+                            "TC Kimlik No": column_mapping['tc_no'],
+                            "Aidat Tutarı": column_mapping['tutar']
+                        })
+                    
                     with st.spinner("Veriler işleniyor..."):
                         df_clean = clean_data_with_mapping(df_raw, column_mapping)
                         
