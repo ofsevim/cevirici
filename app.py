@@ -10,7 +10,8 @@ st.set_page_config(page_title="Veri Temizleyici", layout="wide")
 
 st.title("📂 Sendika Kesinti Listesi Düzenleyici")
 st.markdown("""
-Bu araç, karmaşık CSV/Excel çıktılarını temizler ve düzenler.
+Bu araç, karmaşık CSV/Excel çıktılarını temizler. 
+Kolon eşleştirmesi otomatik yapılır, isterseniz manuel düzenleyebilirsiniz.
 """)
 
 # -----------------------------------------------------------------------------
@@ -35,331 +36,313 @@ def fix_turkish_chars(text):
     return text
 
 # -----------------------------------------------------------------------------
-# 2. HAM VERİ PARSE FONKSİYONU (Tüm kolonları çıkar)
+# YARDIMCI FONKSİYON: OTOMATİK KOLON TESPİTİ
 # -----------------------------------------------------------------------------
-def parse_raw_data(file_content, skip_rows=0):
+def auto_detect_columns(df):
     """
-    Ham veriyi parse eder ve TC Kimlik içeren satırları bulur.
-    Her satırı kolonlara ayırır.
-    
-    Args:
-        file_content: Dosya içeriği
-        skip_rows: Atlanacak başlık satır sayısı
+    DataFrame'deki kolonları otomatik olarak eşleştirir.
+    Returns: dictionary with detected column mappings
     """
-    data_rows = []
-    lines = file_content.splitlines()
+    mapping = {
+        'uye_no': None,
+        'adi': None,
+        'soyadi': None,
+        'tc_no': None,
+        'tutar': None
+    }
     
-    # Başlık satırlarını atla
-    lines = lines[skip_rows:]
+    columns_lower = [str(col).lower() for col in df.columns]
     
-    for line in lines:
-        # TC Kimlik bul (11 hane)
-        tc_match = re.search(r'(?<!\d)\d{11}(?!\d)', line)
+    for idx, col in enumerate(columns_lower):
+        col_clean = fix_turkish_chars(col)
         
-        if tc_match:
-            # Ayırıcıyı belirle (Noktalı virgül öncelikli)
-            if ";" in line:
-                parts = line.split(';')
-            else:
-                parts = line.split(',')
-            
-            # Temizle
-            clean_parts = [p.strip() for p in parts if p.strip()]
-            
-            # Türkçe karakterleri düzelt
-            clean_parts = [fix_turkish_chars(p) for p in clean_parts]
-            
-            if len(clean_parts) >= 3:  # En az 3 kolon olmalı
-                data_rows.append(clean_parts)
+        # TC Kimlik No tespiti
+        if any(keyword in col_clean for keyword in ['tc', 'kimlik', 't.c', 'tcno', 'tckimlik']):
+            mapping['tc_no'] = df.columns[idx]
+        
+        # Ad tespiti
+        elif any(keyword in col_clean for keyword in ['ad', 'adi', 'adı', 'isim', 'name']) and 'soyad' not in col_clean:
+            mapping['adi'] = df.columns[idx]
+        
+        # Soyad tespiti
+        elif any(keyword in col_clean for keyword in ['soyad', 'soyadı', 'surname']):
+            mapping['soyadi'] = df.columns[idx]
+        
+        # Üye No tespiti
+        elif any(keyword in col_clean for keyword in ['üye', 'uye', 'no', 'sicil', 'member']):
+            mapping['uye_no'] = df.columns[idx]
+        
+        # Tutar tespiti
+        elif any(keyword in col_clean for keyword in ['tutar', 'aidat', 'miktar', 'amount', 'ücret']):
+            mapping['tutar'] = df.columns[idx]
     
-    return data_rows
+    return mapping
 
 # -----------------------------------------------------------------------------
-# 3. VERİ TEMİZLEME FONKSİYONU (Kolon haritası ile)
+# YARDIMCI FONKSİYON: TC NO İLE KOLON TESPİTİ (Fallback)
 # -----------------------------------------------------------------------------
-def clean_data_with_mapping(raw_data, column_mapping, id_column_name, same_column=False):
+def detect_columns_by_tc(df):
     """
-    Args:
-        raw_data: Ham veri satırları (liste)
-        column_mapping: Kolon indekslerinin haritası
-        id_column_name: ID kolonu adı (Üye No / Personel No)
-        same_column: Ad ve Soyad aynı kolonda mı?
+    Eğer başlık satırı yoksa, TC numarasını bulup göreceli pozisyondan kolonları tahmin eder.
     """
-    cleaned_rows = []
+    mapping = {
+        'uye_no': None,
+        'adi': None,
+        'soyadi': None,
+        'tc_no': None,
+        'tutar': None
+    }
     
-    for row in raw_data:
+    # İlk satırda TC ara
+    first_row = df.iloc[0] if len(df) > 0 else None
+    if first_row is None:
+        return mapping
+    
+    tc_col_idx = None
+    for idx, val in enumerate(first_row):
+        if pd.notna(val) and re.match(r'^\d{11}$', str(val).strip()):
+            tc_col_idx = idx
+            break
+    
+    if tc_col_idx is not None:
+        mapping['tc_no'] = df.columns[tc_col_idx]
+        
+        # Göreceli pozisyonlar
+        if tc_col_idx > 0:
+            mapping['soyadi'] = df.columns[tc_col_idx - 1]
+        if tc_col_idx > 1:
+            mapping['adi'] = df.columns[tc_col_idx - 2]
+        if tc_col_idx > 2:
+            mapping['uye_no'] = df.columns[tc_col_idx - 3]
+        if tc_col_idx < len(df.columns) - 1:
+            mapping['tutar'] = df.columns[tc_col_idx + 1]
+    
+    return mapping
+
+# -----------------------------------------------------------------------------
+# 2. VERİ TEMİZLEME FONKSİYONU (MAPPING İLE)
+# -----------------------------------------------------------------------------
+def clean_data_with_mapping(df, column_mapping):
+    """
+    Kullanıcının belirlediği mapping'e göre veriyi temizler.
+    """
+    data_rows = []
+    
+    for idx, row in df.iterrows():
         try:
-            # TC Kimlik bul
-            tc_value = None
-            for item in row:
-                if re.match(r'^\d{11}$', str(item)):
-                    tc_value = item
-                    break
+            # Mapping'den kolonları al
+            uye_no = str(row[column_mapping['uye_no']]) if column_mapping['uye_no'] and pd.notna(row.get(column_mapping['uye_no'])) else ""
+            adi = str(row[column_mapping['adi']]) if column_mapping['adi'] and pd.notna(row.get(column_mapping['adi'])) else ""
+            soyadi = str(row[column_mapping['soyadi']]) if column_mapping['soyadi'] and pd.notna(row.get(column_mapping['soyadi'])) else ""
+            tc_no = str(row[column_mapping['tc_no']]) if column_mapping['tc_no'] and pd.notna(row.get(column_mapping['tc_no'])) else ""
+            tutar = str(row[column_mapping['tutar']]) if column_mapping['tutar'] and pd.notna(row.get(column_mapping['tutar'])) else "0"
             
-            if not tc_value:
+            # TC No temizle (sadece rakamlar)
+            tc_no = re.sub(r'\D', '', tc_no)
+            
+            # TC No kontrolü (11 hane olmalı)
+            if len(tc_no) != 11:
                 continue
             
-            # ID No
-            id_no = row[column_mapping['id_no']] if column_mapping['id_no'] < len(row) else ""
+            # Türkçe karakter düzeltmeleri
+            adi = fix_turkish_chars(adi)
+            soyadi = fix_turkish_chars(soyadi)
             
-            # Ad-Soyad aynı kolonda mı?
-            if same_column:
-                full_name = row[column_mapping['adi']] if column_mapping['adi'] < len(row) else ""
-                full_name = str(full_name).strip()
-                
-                # Boşlukla ayır
-                name_parts = full_name.split(maxsplit=1)
-                adi = name_parts[0] if len(name_parts) > 0 else ""
-                soyadi = name_parts[1] if len(name_parts) > 1 else ""
-            else:
-                adi = row[column_mapping['adi']] if column_mapping['adi'] < len(row) else ""
-                soyadi = row[column_mapping['soyadi']] if column_mapping['soyadi'] < len(row) else ""
+            # Tutar temizle
+            tutar = tutar.replace('"', '').replace("'", "").replace(',', '.')
             
-            # Kolonları eşleştir
             row_dict = {
-                id_column_name: id_no,
+                "Üye No": uye_no,
                 "Adı": adi,
                 "Soyadı": soyadi,
-                "TC Kimlik No": tc_value
+                "TC Kimlik No": tc_no,
+                "Aidat Tutarı": tutar
             }
+            data_rows.append(row_dict)
             
-            # Tutar (varsa)
-            if column_mapping['tutar'] >= 0 and column_mapping['tutar'] < len(row):
-                raw_tutar = row[column_mapping['tutar']]
-                raw_tutar = str(raw_tutar).replace('"', '').replace("'", "").replace(',', '.')
-                row_dict["Aidat Tutarı"] = raw_tutar
-            else:
-                row_dict["Aidat Tutarı"] = "0"
-            
-            cleaned_rows.append(row_dict)
-            
-        except Exception:
+        except Exception as e:
             continue
     
-    df = pd.DataFrame(cleaned_rows)
+    # DataFrame oluştur
+    df_clean = pd.DataFrame(data_rows)
     
     # Tutarı sayıya çevir
     try:
-        df["Aidat Tutarı"] = pd.to_numeric(df["Aidat Tutarı"], errors='coerce').fillna(0)
+        df_clean["Aidat Tutarı"] = pd.to_numeric(df_clean["Aidat Tutarı"], errors='coerce').fillna(0)
     except:
         pass
     
-    return df
+    return df_clean
 
 # -----------------------------------------------------------------------------
-# 4. ARAYÜZ VE DOSYA YÜKLEME
+# 3. ARAYÜZ VE DOSYA YÜKLEME
 # -----------------------------------------------------------------------------
-
-# AYARLAR
-st.subheader("⚙️ Ayarlar")
-
-col_a, col_b = st.columns(2)
-
-with col_a:
-    id_column_choice = st.radio(
-        "ID Kolonu Adı:",
-        options=["Üye No", "Personel No"],
-        horizontal=True
-    )
-
-with col_b:
-    skip_rows = st.number_input(
-        "🔢 Atlanacak Başlık Satır Sayısı:",
-        min_value=0,
-        max_value=10,
-        value=0,
-        help="Excel'de başlık satırları varsa kaç satır atlanacağını belirtin (genelde 1 veya 2)"
-    )
-
-st.markdown("---")
-
-uploaded_file = st.file_uploader("📤 Dosyayı Yükle", type=["csv", "xlsx", "txt", "xls"])
+uploaded_file = st.file_uploader("Dosyayı Yükle", type=["csv", "xlsx", "txt", "xls"])
 
 if uploaded_file is not None:
-    st.info("📊 Dosya okunuyor...")
-    
-    string_data = ""
+    st.info("Dosya yükleniyor...")
     
     try:
+        df_raw = None
+        
         # Excel Okuma
         if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
             try:
-                df_temp = pd.read_excel(uploaded_file, header=None, dtype=str)
-                string_data = df_temp.to_csv(index=False, header=False, sep=';')
+                # Başlık satırını otomatik tespit et
+                df_raw = pd.read_excel(uploaded_file, dtype=str)
+                
+                # Eğer ilk satır başlık gibi görünmüyorsa, header=None ile tekrar oku
+                if df_raw.columns[0] and re.match(r'^\d+$', str(df_raw.columns[0])):
+                    uploaded_file.seek(0)
+                    df_raw = pd.read_excel(uploaded_file, header=None, dtype=str)
+                    
             except Exception as excel_error:
-                st.error(f"Excel hatası: {excel_error}")
+                st.error(f"Excel okuma hatası: {excel_error}")
+                st.stop()
         
-        # Metin Okuma
+        # CSV/TXT Okuma (Encoding Denemeleri)
         else:
             raw_bytes = uploaded_file.getvalue()
-            for encoding in ["cp1254", "utf-8", "iso-8859-9", "latin-1"]:
+            string_data = None
+            
+            # Encoding denemeleri
+            for encoding in ['cp1254', 'utf-8', 'iso-8859-9', 'latin-1']:
                 try:
                     string_data = raw_bytes.decode(encoding)
                     break
                 except UnicodeDecodeError:
                     continue
-        
-        # Ham veriyi parse et
-        if string_data:
-            raw_data = parse_raw_data(string_data, skip_rows=skip_rows)
             
-            if not raw_data:
-                st.error("❌ TC Kimlik No içeren satır bulunamadı.")
-            else:
-                st.success(f"✅ {len(raw_data)} satır bulundu!")
+            if string_data is None:
+                st.error("Dosya encoding'i algılanamadı.")
+                st.stop()
+            
+            # Ayırıcıyı tespit et
+            delimiter = ';' if ';' in string_data.split('\n')[0] else ','
+            
+            # DataFrame'e çevir
+            try:
+                df_raw = pd.read_csv(io.StringIO(string_data), sep=delimiter, dtype=str)
                 
-                # Kolon sayısını bul (en fazla kolona sahip satır)
-                max_cols = max(len(row) for row in raw_data)
-                
-                # Örnek veri göster - tüm kolonları göstermek için en uzun satırları seç
-                st.subheader("🔍 Ham Veri Önizlemesi (İlk 5 Satır)")
-                
-                # İlk 5 satırı normalize et (eksik kolonları boş string ile doldur)
-                preview_data = []
-                for row in raw_data[:5]:
-                    normalized_row = list(row) + [''] * (max_cols - len(row))
-                    preview_data.append(normalized_row)
-                
-                preview_df = pd.DataFrame(preview_data)
-                preview_df.columns = [f"Kolon {i}" for i in range(max_cols)]
-                st.dataframe(preview_df, use_container_width=True)
-                
-                st.info(f"📊 Toplam {max_cols} kolon tespit edildi.")
-                
-                st.markdown("---")
-                st.subheader("🗂️ Kolon Eşleştirme")
-                st.info("👉 Aşağıda her bilginin hangi kolonda olduğunu seçin (Kolon 0'dan başlar)")
-                
-                # Ad-Soyad aynı kolonda mı?
-                same_column = st.checkbox(
-                    "✅ Ad ve Soyad aynı kolonda (örn: 'Ahmet Yılmaz')",
-                    value=False,
-                    help="İşaretlerseniz, tek bir kolon seçip otomatik olarak ad-soyad ayırması yapılır"
+                # Eğer başlık yoksa
+                if df_raw.columns[0] and re.match(r'^\d+$', str(df_raw.columns[0])):
+                    df_raw = pd.read_csv(io.StringIO(string_data), sep=delimiter, header=None, dtype=str)
+            except:
+                df_raw = pd.read_csv(io.StringIO(string_data), sep=delimiter, header=None, dtype=str)
+        
+        # DataFrame yüklendi
+        if df_raw is not None and not df_raw.empty:
+            st.success("✅ Dosya başarıyla yüklendi!")
+            
+            # Önizleme
+            st.subheader("📋 Veri Önizleme (İlk 5 Satır)")
+            st.dataframe(df_raw.head(), use_container_width=True)
+            
+            # Otomatik kolon tespiti
+            auto_mapping = auto_detect_columns(df_raw)
+            
+            # Eğer otomatik tespit başarısızsa, TC bazlı tespit dene
+            if auto_mapping['tc_no'] is None:
+                auto_mapping = detect_columns_by_tc(df_raw)
+            
+            # Kolon Eşleştirme Arayüzü
+            st.subheader("🔗 Kolon Eşleştirme")
+            st.markdown("Aşağıdan her bir hedef alana karşılık gelen kaynak kolonu seçin:")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            available_columns = ['(Boş)'] + list(df_raw.columns)
+            
+            with col1:
+                uye_no_col = st.selectbox(
+                    "Üye No",
+                    options=available_columns,
+                    index=available_columns.index(auto_mapping['uye_no']) if auto_mapping['uye_no'] in available_columns else 0
                 )
                 
-                st.markdown("##### Kolonları Seçin:")
+                tc_no_col = st.selectbox(
+                    "TC Kimlik No ⚠️ (Zorunlu)",
+                    options=available_columns,
+                    index=available_columns.index(auto_mapping['tc_no']) if auto_mapping['tc_no'] in available_columns else 0
+                )
+            
+            with col2:
+                adi_col = st.selectbox(
+                    "Adı",
+                    options=available_columns,
+                    index=available_columns.index(auto_mapping['adi']) if auto_mapping['adi'] in available_columns else 0
+                )
                 
-                if same_column:
-                    # Ad-Soyad birlikte
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        id_col = st.number_input(
-                            f"📌 {id_column_choice}",
-                            min_value=0,
-                            max_value=max_cols-1,
-                            value=0,
-                            help="Üye veya Personel No'nun bulunduğu kolon"
-                        )
-                    
-                    with col2:
-                        name_col = st.number_input(
-                            "👤 Ad Soyad (Birlikte)",
-                            min_value=0,
-                            max_value=max_cols-1,
-                            value=min(1, max_cols-1),
-                            help="Ad ve soyadın birlikte bulunduğu kolon"
-                        )
-                        surname_col = name_col  # Aynı kolon
-                    
-                    with col3:
-                        amount_col = st.number_input(
-                            "💰 Aidat Tutarı",
-                            min_value=0,
-                            max_value=max_cols-1,
-                            value=min(2, max_cols-1),
-                            help="Tutar bilgisinin bulunduğu kolon"
-                        )
-                
+                tutar_col = st.selectbox(
+                    "Aidat Tutarı",
+                    options=available_columns,
+                    index=available_columns.index(auto_mapping['tutar']) if auto_mapping['tutar'] in available_columns else 0
+                )
+            
+            with col3:
+                soyadi_col = st.selectbox(
+                    "Soyadı",
+                    options=available_columns,
+                    index=available_columns.index(auto_mapping['soyadi']) if auto_mapping['soyadi'] in available_columns else 0
+                )
+            
+            # Mapping oluştur
+            column_mapping = {
+                'uye_no': None if uye_no_col == '(Boş)' else uye_no_col,
+                'adi': None if adi_col == '(Boş)' else adi_col,
+                'soyadi': None if soyadi_col == '(Boş)' else soyadi_col,
+                'tc_no': None if tc_no_col == '(Boş)' else tc_no_col,
+                'tutar': None if tutar_col == '(Boş)' else tutar_col
+            }
+            
+            # İşleme butonu
+            if st.button("🚀 Veriyi İşle", type="primary", use_container_width=True):
+                if column_mapping['tc_no'] is None:
+                    st.error("❌ TC Kimlik No kolonu seçilmesi zorunludur!")
                 else:
-                    # Ad-Soyad ayrı
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        id_col = st.number_input(
-                            f"📌 {id_column_choice}",
-                            min_value=0,
-                            max_value=max_cols-1,
-                            value=0,
-                            help="Üye veya Personel No'nun bulunduğu kolon"
-                        )
-                    
-                    with col2:
-                        name_col = st.number_input(
-                            "👤 Adı",
-                            min_value=0,
-                            max_value=max_cols-1,
-                            value=min(1, max_cols-1),
-                            help="İsmin bulunduğu kolon"
-                        )
-                    
-                    with col3:
-                        surname_col = st.number_input(
-                            "👥 Soyadı",
-                            min_value=0,
-                            max_value=max_cols-1,
-                            value=min(2, max_cols-1),
-                            help="Soyadının bulunduğu kolon"
-                        )
-                    
-                    with col4:
-                        amount_col = st.number_input(
-                            "💰 Aidat Tutarı",
-                            min_value=0,
-                            max_value=max_cols-1,
-                            value=min(4, max_cols-1),
-                            help="Tutar bilgisinin bulunduğu kolon"
-                        )
-                
-                # Temizleme butonu
-                if st.button("🚀 Veriyi Temizle ve Düzenle", type="primary", use_container_width=True):
-                    
-                    column_mapping = {
-                        'id_no': id_col,
-                        'adi': name_col,
-                        'soyadi': surname_col,
-                        'tutar': amount_col
-                    }
-                    
-                    df_clean = clean_data_with_mapping(raw_data, column_mapping, id_column_choice, same_column=same_column)
-                    
-                    if not df_clean.empty:
-                        st.success(f"✨ Başarılı! Toplam {len(df_clean)} kişi düzenlendi.")
-                        st.dataframe(df_clean, use_container_width=True)
+                    with st.spinner("Veriler işleniyor..."):
+                        df_clean = clean_data_with_mapping(df_raw, column_mapping)
                         
-                        # Excel İndir
-                        buffer = io.BytesIO()
-                        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                            df_clean.to_excel(writer, index=False, sheet_name='Temiz Liste')
-                            workbook = writer.book
-                            worksheet = writer.sheets['Temiz Liste']
+                        if not df_clean.empty:
+                            st.success(f"✅ Başarılı! Toplam {len(df_clean)} kişi listelendi.")
                             
-                            # Başlık Formatı
-                            header_format = workbook.add_format({
-                                'bold': True,
-                                'text_wrap': True,
-                                'valign': 'top',
-                                'fg_color': '#D7E4BC',
-                                'border': 1
-                            })
+                            # Temiz veriyi göster
+                            st.subheader("📊 Temizlenmiş Veri")
+                            st.dataframe(df_clean, use_container_width=True)
                             
-                            for col_num, value in enumerate(df_clean.columns.values):
-                                worksheet.write(0, col_num, value, header_format)
+                            # Excel İndir
+                            buffer = io.BytesIO()
+                            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                                df_clean.to_excel(writer, index=False, sheet_name='Temiz Liste')
+                                workbook = writer.book
+                                worksheet = writer.sheets['Temiz Liste']
+                                
+                                # Başlık Formatı (Kalın ve Renkli)
+                                header_format = workbook.add_format({
+                                    'bold': True,
+                                    'text_wrap': True,
+                                    'valign': 'top',
+                                    'fg_color': '#D7E4BC',
+                                    'border': 1
+                                })
+                                
+                                for col_num, value in enumerate(df_clean.columns.values):
+                                    worksheet.write(0, col_num, value, header_format)
+                                    
+                                worksheet.set_column('A:E', 20)
                             
-                            worksheet.set_column('A:E', 20)
-                        
-                        file_prefix = "Uye" if id_column_choice == "Üye No" else "Personel"
-                        
-                        st.download_button(
-                            label="📥 Temiz Excel İndir",
-                            data=buffer,
-                            file_name=f"BMS_Sendika_{file_prefix}_Temiz.xlsx",
-                            mime="application/vnd.ms-excel",
-                            use_container_width=True
-                        )
-                    else:
-                        st.error("❌ Veri temizlenemedi. Kolon eşleştirmelerini kontrol edin.")
+                            st.download_button(
+                                label="📥 Temiz Excel İndir",
+                                data=buffer.getvalue(),
+                                file_name="BMS_Sendika_Temiz.xlsx",
+                                mime="application/vnd.ms-excel",
+                                use_container_width=True
+                            )
+                        else:
+                            st.warning("⚠️ Geçerli TC Kimlik No bulunamadı. Lütfen kolon eşleştirmesini kontrol edin.")
+        else:
+            st.error("Dosya okunamadı veya boş.")
                 
     except Exception as e:
-        st.error(f"❌ Hata: {e}")
+        st.error(f"❌ Beklenmeyen hata: {e}")
         st.exception(e)
