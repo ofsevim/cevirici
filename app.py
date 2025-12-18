@@ -240,14 +240,45 @@ if uploaded_file is not None:
         if st.session_state.clean_df is None:
             with st.spinner("🔄 Veriler işleniyor ve temizleniyor..."):
                 try:
-                    st.session_state.clean_df = apply_column_mapping(
+                    st.session_state.clean_df, processing_stats = apply_column_mapping(
                         st.session_state.raw_df,
                         st.session_state.column_mapping
                     )
+                    st.session_state.processing_stats = processing_stats
                     st.session_state.step = 4
                 except Exception as e:
                     st.error(f"❌ İşleme hatası: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
                     st.stop()
+        
+        # İşlem istatistikleri
+        if hasattr(st.session_state, 'processing_stats'):
+            stats = st.session_state.processing_stats
+            
+            with st.expander("📊 İşlem Raporu", expanded=not st.session_state.clean_df.empty):
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("📝 Toplam Satır", stats['total_rows'])
+                
+                with col2:
+                    st.metric("✅ İşlenen", stats['processed_rows'], 
+                             delta=f"%{stats['processed_rows']/max(stats['total_rows'],1)*100:.1f}")
+                
+                with col3:
+                    st.metric("⚠️ Geçersiz TC", stats['invalid_tc'])
+                
+                with col4:
+                    st.metric("🗑️ Boş Satır", stats['empty_rows'])
+                
+                # Atlanan satır örnekleri
+                if stats['sample_skipped']:
+                    st.markdown("**🔍 Atlanan Satır Örnekleri (İlk 5):**")
+                    for item in stats['sample_skipped']:
+                        st.caption(f"Satır {item['satir']}: TC=`{item['tc']}`, Ad=`{item['ad']}`, Soyad=`{item['soyad']}`")
+                    
+                    st.info("💡 **Tavsiye:** TC Kimlik sütununun doğru seçildiğinden emin olun. 11 haneli olmalı.")
         
         # Sonuç gösterimi
         if st.session_state.clean_df is not None and not st.session_state.clean_df.empty:
@@ -374,7 +405,39 @@ if uploaded_file is not None:
                 )
             
         else:
-            st.warning("⚠️ İşlenebilir veri bulunamadı. Lütfen sütun eşleştirmesini kontrol edin.")
+            st.error("❌ İşlenebilir veri bulunamadı!")
+            
+            st.markdown("### 🔍 Olası Nedenler ve Çözümler:")
+            
+            st.markdown("""
+            1. **TC Kimlik No sütunu yanlış seçilmiş olabilir**
+               - TC Kimlik No 11 haneli sayısal bir değer olmalıdır
+               - Geri dönüp sütun eşleştirmesini kontrol edin
+            
+            2. **Veri formatı beklenenden farklı olabilir**
+               - TC Kimlik boşluk veya özel karakter içeriyor olabilir
+               - Dosyanın başından daha fazla satır atlamanız gerekebilir
+            
+            3. **Tüm satırlar boş olabilir**
+               - "Atlanan satır sayısı" değerini azaltmayı deneyin
+               - Ham veri önizlemesinde gerçek veriyi gördüğünüzden emin olun
+            """)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("⬅️ Sütun Eşleştirmesine Dön", use_container_width=True, type="primary"):
+                    st.session_state.step = 2
+                    st.session_state.clean_df = None
+                    st.rerun()
+            
+            with col2:
+                if st.button("📁 Dosya Yüklemeye Dön", use_container_width=True):
+                    st.session_state.step = 1
+                    st.session_state.raw_df = None
+                    st.session_state.clean_df = None
+                    st.session_state.column_mapping = None
+                    st.rerun()
 
 else:
     st.info("👆 Başlamak için bir dosya yükleyin")

@@ -169,13 +169,26 @@ def apply_column_mapping(df_raw, column_mapping):
         column_mapping (dict): Sütun eşleştirme haritası
     
     Returns:
-        pd.DataFrame: Temizlenmiş ve yapılandırılmış veri
+        tuple: (pd.DataFrame: Temizlenmiş veri, dict: İşlem istatistikleri)
     """
     
     processed_data = []
+    stats = {
+        'total_rows': len(df_raw),
+        'processed_rows': 0,
+        'skipped_rows': 0,
+        'invalid_tc': 0,
+        'empty_rows': 0,
+        'sample_skipped': []
+    }
     
     for idx, row in df_raw.iterrows():
         try:
+            # Tamamen boş satır kontrolü
+            if row.isna().all():
+                stats['empty_rows'] += 1
+                continue
+            
             # Her alan için mapping'e göre veriyi al
             member_no = str(row[column_mapping.get('member_no', 0)]).strip() if 'member_no' in column_mapping else ""
             first_name = str(row[column_mapping.get('first_name', 0)]).strip() if 'first_name' in column_mapping else ""
@@ -183,11 +196,24 @@ def apply_column_mapping(df_raw, column_mapping):
             tc_no = str(row[column_mapping.get('tc_no', 0)]).strip() if 'tc_no' in column_mapping else ""
             amount = str(row[column_mapping.get('amount', 0)]).strip() if 'amount' in column_mapping else "0"
             
+            # None veya nan kontrolü
+            if member_no in ['None', 'nan', 'NaN']:
+                member_no = ""
+            if first_name in ['None', 'nan', 'NaN']:
+                first_name = ""
+            if last_name in ['None', 'nan', 'NaN']:
+                last_name = ""
+            if tc_no in ['None', 'nan', 'NaN']:
+                tc_no = ""
+            if amount in ['None', 'nan', 'NaN']:
+                amount = "0"
+            
             # Türkçe karakter düzeltmeleri
             first_name = fix_turkish_chars(first_name)
             last_name = fix_turkish_chars(last_name)
             
             # TC temizle
+            tc_no_original = tc_no
             tc_no = clean_tc_number(tc_no)
             
             # Tutar temizle
@@ -202,15 +228,25 @@ def apply_column_mapping(df_raw, column_mapping):
                     "TC Kimlik No": tc_no,
                     "Aidat Tutarı": amount_clean
                 })
+                stats['processed_rows'] += 1
+            else:
+                stats['invalid_tc'] += 1
+                if len(stats['sample_skipped']) < 5:
+                    stats['sample_skipped'].append({
+                        'satir': idx + 1,
+                        'tc': tc_no_original,
+                        'ad': first_name,
+                        'soyad': last_name
+                    })
         
-        except Exception:
-            # Hatalı satırları atla
+        except Exception as e:
+            stats['skipped_rows'] += 1
             continue
     
     # DataFrame oluştur
     df_clean = pd.DataFrame(processed_data)
     
-    return df_clean
+    return df_clean, stats
 
 
 def find_data_start_row(uploaded_file, max_rows_to_check=50):
