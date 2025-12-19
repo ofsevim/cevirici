@@ -88,7 +88,9 @@ def render_column_mapper(df_sample, required_columns):
             )
             
             if selected != "-- Seçilmedi --":
-                mapping[internal_key] = selected
+                # "Sütun 0" -> 0 dönüşümü
+                col_index = int(selected.split(" ")[1])
+                mapping[internal_key] = col_index
     
     with col_right:
         for display_name, internal_key in items[mid_point:]:
