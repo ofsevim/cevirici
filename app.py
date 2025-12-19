@@ -289,12 +289,20 @@ if uploaded_file is not None:
                 
                 # Tutar debug bilgisi
                 if stats.get('sample_amounts'):
-                    st.markdown("**💵 Tutar Dönüşüm Örnekleri (İlk 5):**")
+                    st.markdown("**✅ Başarılı Tutar Dönüşüm Örnekleri:**")
                     for item in stats['sample_amounts']:
                         st.caption(f"Satır {item['satir']}: Ham=`{item['ham_tutar']}` → Temiz=`{item['temiz_tutar']}`")
+                else:
+                    st.error("❌ HİÇBİR SATIRDA GEÇERLİ TUTAR BULUNAMADI! Yanlış sütun seçilmiş olabilir.")
+                
+                # Sıfıra dönüşen tutar örnekleri
+                if stats.get('sample_zero_amounts'):
+                    st.markdown("**⚠️ Sıfıra Dönüşen Tutar Örnekleri:**")
+                    for item in stats['sample_zero_amounts']:
+                        st.caption(f"Satır {item['satir']}: Ham değer=`{item['ham_tutar']}`")
                     
                     if stats.get('zero_amount', 0) > 0:
-                        st.warning(f"⚠️ {stats['zero_amount']} satırda tutar sıfıra dönüştürüldü. Doğru sütunu seçtiğinizden emin olun!")
+                        st.warning(f"⚠️ Toplam {stats['zero_amount']} satırda tutar sıfıra dönüştürüldü.")
                 
                 # Atlanan satır örnekleri
                 if stats['sample_skipped']:

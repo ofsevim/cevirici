@@ -49,13 +49,63 @@ def read_file_with_encoding(uploaded_file, skip_rows=0):
     # Excel dosyası kontrolü
     if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
         try:
-            df = pd.read_excel(uploaded_file, header=None, dtype=str, skiprows=skip_rows)
+            # İlk olarak openpyxl ile merged cell bilgisini alalım (sadece .xlsx için)
+            if uploaded_file.name.endswith('.xlsx'):
+                try:
+                    from openpyxl import load_workbook
+                    from io import BytesIO
+                    
+                    # Dosyayı oku
+                    uploaded_file.seek(0)
+                    wb = load_workbook(BytesIO(uploaded_file.read()), data_only=True)
+                    ws = wb.active
+                    
+                    # Merged cell aralıklarını kaydet
+                    merged_ranges = list(ws.merged_cells.ranges)
+                    
+                    # Merged cell'leri unmerge et ve değerleri yay
+                    for merged_range in merged_ranges:
+                        # Merged aralığın ilk hücresindeki değeri al
+                        top_left_cell = ws.cell(merged_range.min_row, merged_range.min_col)
+                        top_left_value = top_left_cell.value
+                        
+                        # Önce unmerge et
+                        ws.unmerge_cells(str(merged_range))
+                        
+                        # Tüm hücrelere aynı değeri yaz
+                        for row in range(merged_range.min_row, merged_range.max_row + 1):
+                            for col in range(merged_range.min_col, merged_range.max_col + 1):
+                                ws.cell(row, col, top_left_value)
+                    
+                    # DataFrame'e dönüştür
+                    data = []
+                    for row in ws.iter_rows(min_row=skip_rows + 1, values_only=True):
+                        data.append(list(row))
+                    
+                    df = pd.DataFrame(data, dtype=str)
+                    
+                    wb.close()
+                    
+                except Exception as e:
+                    # openpyxl başarısız olursa normal pandas ile oku
+                    uploaded_file.seek(0)
+                    df = pd.read_excel(uploaded_file, header=None, dtype=str, skiprows=skip_rows)
+            else:
+                # .xls dosyaları için normal okuma
+                df = pd.read_excel(uploaded_file, header=None, dtype=str, skiprows=skip_rows)
+            
+            # None değerlerini NaN'a çevir (openpyxl'den gelen)
+            df = df.replace(['None', 'none', ''], pd.NA)
+            
             # Tamamen boş satırları temizle
             df = df.dropna(how='all').reset_index(drop=True)
+            
             # Tamamen boş sütunları temizle
             df = df.dropna(axis=1, how='all')
+            
             # Sütun numaralarını yeniden düzenle
             df.columns = range(len(df.columns))
+            
             return df
         except Exception as e:
             raise ValueError(f"Excel okuma hatası: {e}")
@@ -300,13 +350,24 @@ def apply_column_mapping(df_raw, column_mapping):
             amount_original = amount
             amount_clean = clean_amount_value(amount)
             
-            # Debug için örnek tutar bilgisi kaydet (ilk 5)
-            if len(stats['sample_amounts']) < 5 and tc_no:
-                stats['sample_amounts'].append({
-                    'satir': idx + 1,
-                    'ham_tutar': amount_original,
-                    'temiz_tutar': amount_clean
-                })
+            # Debug için örnek tutar bilgisi kaydet
+            if tc_no:
+                # Boş olmayan tutar örnekleri (ilk 5)
+                if len(stats['sample_amounts']) < 5 and amount_clean > 0:
+                    stats['sample_amounts'].append({
+                        'satir': idx + 1,
+                        'ham_tutar': amount_original,
+                        'temiz_tutar': amount_clean
+                    })
+                
+                # Sıfıra dönüşen tutar örnekleri (ilk 3) - debug için
+                if 'sample_zero_amounts' not in stats:
+                    stats['sample_zero_amounts'] = []
+                if len(stats['sample_zero_amounts']) < 3 and amount_clean == 0.0:
+                    stats['sample_zero_amounts'].append({
+                        'satir': idx + 1,
+                        'ham_tutar': amount_original
+                    })
             
             # Sıfır tutar sayacı
             if amount_clean == 0.0 and amount_original not in ['', '0', 'nan', 'NaN', 'None']:
