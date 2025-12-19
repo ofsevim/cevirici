@@ -122,24 +122,6 @@ def render_column_mapper(df_sample, required_columns):
                 if col_index is not None:
                     mapping[internal_key] = col_index
     
-    # Otomatik algılama önerisi göster
-    with st.expander("💡 Akıllı Öneri", expanded=False):
-        suggestions = auto_suggest_columns(df_sample, required_columns, use_combined_name)
-        if suggestions:
-            st.markdown("**Önerilen Eşleşmeler:**")
-            for key, col_idx in suggestions.items():
-                if key == 'full_name':
-                    display_name = "Adı Soyadı (Birleşik)"
-                else:
-                    matching_items = [k for k, v in required_columns.items() if v == key]
-                    display_name = matching_items[0] if matching_items else key
-                st.markdown(f"- `{display_name}` → **Sütun {col_idx}**")
-            
-            if st.button("🎯 Önerileri Uygula", use_container_width=True):
-                for key, col_idx in suggestions.items():
-                    st.session_state[f"map_{key}"] = f"Sütun {col_idx}"
-                st.rerun()
-    
     return mapping
 
 

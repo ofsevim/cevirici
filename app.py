@@ -235,26 +235,6 @@ if uploaded_file is not None:
                     st.code(traceback.format_exc())
                     st.stop()
         
-        # İşlem istatistikleri
-        if hasattr(st.session_state, 'processing_stats'):
-            stats = st.session_state.processing_stats
-            
-            with st.expander("📊 İşlem Raporu", expanded=not st.session_state.clean_df.empty):
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("📝 Toplam Satır", stats['total_rows'])
-                
-                with col2:
-                    st.metric("✅ İşlenen", stats['processed_rows'], 
-                             delta=f"%{stats['processed_rows']/max(stats['total_rows'],1)*100:.1f}")
-                
-                with col3:
-                    st.metric("⚠️ Geçersiz TC", stats['invalid_tc'])
-                
-                with col4:
-                    st.metric("🗑️ Boş Satır", stats['empty_rows'])
-        
         # Sonuç gösterimi
         if st.session_state.clean_df is not None and not st.session_state.clean_df.empty:
             
