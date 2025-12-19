@@ -60,6 +60,17 @@ def render_column_mapper(df_sample, required_columns):
     # Mevcut sütun listesi (sütun numaraları ile)
     available_columns = ["-- Seçilmedi --"] + [f"Sütun {i}" for i in range(len(df_sample.columns))]
     
+    # Sütun önizleme fonksiyonu
+    def show_column_preview(col_index, df):
+        """Seçilen sütunun ilk 3 değerini göster"""
+        if col_index is not None and col_index < len(df.columns):
+            values = df[col_index].dropna().head(3).tolist()
+            if values:
+                preview = " | ".join([str(v)[:20] for v in values])
+                st.caption(f"📋 Örnek: `{preview}`")
+            else:
+                st.caption("📋 (Boş sütun)")
+    
     # Eşleştirme formu
     st.markdown("#### Sütunları Eşleştir")
     
@@ -84,13 +95,14 @@ def render_column_mapper(df_sample, required_columns):
                 f"**{display_name}** için sütun seç:",
                 options=available_columns,
                 key=f"map_{internal_key}",
-                help=f"{display_name} bilgisinin bulunduğu sütunu seçin"
             )
             
             if selected != "-- Seçilmedi --":
-                # "Sütun 0" -> 0 dönüşümü
                 col_index = int(selected.split(" ")[1])
                 mapping[internal_key] = col_index
+                show_column_preview(col_index, df_sample)
+            else:
+                st.caption("")  # Boşluk için
     
     with col_right:
         for display_name, internal_key in items[mid_point:]:
@@ -98,13 +110,14 @@ def render_column_mapper(df_sample, required_columns):
                 f"**{display_name}** için sütun seç:",
                 options=available_columns,
                 key=f"map_{internal_key}",
-                help=f"{display_name} bilgisinin bulunduğu sütunu seçin"
             )
             
             if selected != "-- Seçilmedi --":
-                # "Sütun 0" -> 0 dönüşümü
                 col_index = int(selected.split(" ")[1])
                 mapping[internal_key] = col_index
+                show_column_preview(col_index, df_sample)
+            else:
+                st.caption("")  # Boşluk için
     
     # Otomatik algılama önerisi göster
     with st.expander("💡 Akıllı Öneri", expanded=False):
