@@ -298,11 +298,47 @@ def apply_column_mapping(df_raw, column_mapping):
         'invalid_tc': 0,
         'empty_rows': 0,
         'zero_amount': 0,
+        'amount_shifted': 0,
         'sample_skipped': [],
         'sample_amounts': []  # Debug için örnek tutar bilgileri
     }
     
     use_combined_name = column_mapping.get('use_combined_name', False)
+    
+    # Tutar sütunu için önceki/sonraki satırdan değer alma hazırlığı
+    # (Excel'deki merged cell kayması sorununu çözmek için)
+    amount_col = column_mapping.get('amount', None)
+    tc_col = column_mapping.get('tc_no', None)
+    
+    # Debug: Ham sütun değerlerini kaydet
+    stats['amount_col_index'] = amount_col
+    stats['sample_raw_amounts'] = []
+    
+    # Tutar değerlerini önbellekle - kayma sorununu çözmek için
+    amount_lookup = {}
+    if amount_col is not None:
+        for idx, row in df_raw.iterrows():
+            try:
+                raw_val = row[amount_col]
+                amount_val = str(raw_val).strip() if pd.notna(raw_val) else ""
+                
+                # Debug için ilk 10 satırın ham değerlerini kaydet
+                if len(stats['sample_raw_amounts']) < 10:
+                    stats['sample_raw_amounts'].append({
+                        'satir': idx,
+                        'ham': str(raw_val),
+                        'temiz': amount_val
+                    })
+                
+                if amount_val and amount_val not in ['None', 'nan', 'NaN', '']:
+                    # Bu satırda tutar değeri var
+                    cleaned = clean_amount_value(amount_val)
+                    if cleaned > 0:
+                        amount_lookup[idx] = amount_val
+            except Exception as e:
+                continue
+    
+    stats['amount_lookup_count'] = len(amount_lookup)
     
     for idx, row in df_raw.iterrows():
         try:
@@ -315,6 +351,17 @@ def apply_column_mapping(df_raw, column_mapping):
             member_no = str(row[column_mapping.get('member_no', 0)]).strip() if 'member_no' in column_mapping else ""
             tc_no = str(row[column_mapping.get('tc_no', 0)]).strip() if 'tc_no' in column_mapping else ""
             amount = str(row[column_mapping.get('amount', 0)]).strip() if 'amount' in column_mapping else "0"
+            
+            # Tutar boşsa veya 0 ise, bir önceki veya sonraki satırdan almayı dene
+            if amount in ['None', 'nan', 'NaN', '', '0'] or clean_amount_value(amount) == 0:
+                # Önce bir önceki satıra bak
+                if idx - 1 in amount_lookup:
+                    amount = amount_lookup[idx - 1]
+                    stats['amount_shifted'] += 1
+                # Sonra bir sonraki satıra bak
+                elif idx + 1 in amount_lookup:
+                    amount = amount_lookup[idx + 1]
+                    stats['amount_shifted'] += 1
             
             # Ad-Soyad işleme
             if use_combined_name and 'full_name' in column_mapping:

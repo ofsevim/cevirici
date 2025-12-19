@@ -288,6 +288,14 @@ if uploaded_file is not None:
                     st.metric("🗑️ Boş Satır", stats['empty_rows'])
                 
                 # Tutar debug bilgisi
+                
+                # Ham sütun verileri - debug
+                st.markdown(f"**🔧 Debug: Tutar Sütunu = {stats.get('amount_col_index', '?')} (Geçerli tutar bulunan satır: {stats.get('amount_lookup_count', 0)})**")
+                if stats.get('sample_raw_amounts'):
+                    st.markdown("**📋 Ham Tutar Sütunu Değerleri (İlk 10 satır):**")
+                    for item in stats['sample_raw_amounts']:
+                        st.caption(f"Satır {item['satir']}: `{item['ham']}`")
+                
                 if stats.get('sample_amounts'):
                     st.markdown("**✅ Başarılı Tutar Dönüşüm Örnekleri:**")
                     for item in stats['sample_amounts']:
@@ -303,6 +311,10 @@ if uploaded_file is not None:
                     
                     if stats.get('zero_amount', 0) > 0:
                         st.warning(f"⚠️ Toplam {stats['zero_amount']} satırda tutar sıfıra dönüştürüldü.")
+                
+                # Tutar kayması bilgisi
+                if stats.get('amount_shifted', 0) > 0:
+                    st.success(f"✅ {stats['amount_shifted']} satırda tutar değeri komşu satırdan alındı (Excel merged cell düzeltmesi).")
                 
                 # Atlanan satır örnekleri
                 if stats['sample_skipped']:
