@@ -297,10 +297,8 @@ def apply_column_mapping(df_raw, column_mapping):
         'skipped_rows': 0,
         'invalid_tc': 0,
         'empty_rows': 0,
-        'zero_amount': 0,
         'amount_shifted': 0,
-        'sample_skipped': [],
-        'sample_amounts': []  # Debug için örnek tutar bilgileri
+        'sample_skipped': []
     }
     
     use_combined_name = column_mapping.get('use_combined_name', False)
@@ -308,11 +306,6 @@ def apply_column_mapping(df_raw, column_mapping):
     # Tutar sütunu için önceki/sonraki satırdan değer alma hazırlığı
     # (Excel'deki merged cell kayması sorununu çözmek için)
     amount_col = column_mapping.get('amount', None)
-    tc_col = column_mapping.get('tc_no', None)
-    
-    # Debug: Ham sütun değerlerini kaydet
-    stats['amount_col_index'] = amount_col
-    stats['sample_raw_amounts'] = []
     
     # Tutar değerlerini önbellekle - kayma sorununu çözmek için
     amount_lookup = {}
@@ -322,23 +315,12 @@ def apply_column_mapping(df_raw, column_mapping):
                 raw_val = row[amount_col]
                 amount_val = str(raw_val).strip() if pd.notna(raw_val) else ""
                 
-                # Debug için ilk 10 satırın ham değerlerini kaydet
-                if len(stats['sample_raw_amounts']) < 10:
-                    stats['sample_raw_amounts'].append({
-                        'satir': idx,
-                        'ham': str(raw_val),
-                        'temiz': amount_val
-                    })
-                
                 if amount_val and amount_val not in ['None', 'nan', 'NaN', '']:
-                    # Bu satırda tutar değeri var
                     cleaned = clean_amount_value(amount_val)
                     if cleaned > 0:
                         amount_lookup[idx] = amount_val
-            except Exception as e:
+            except:
                 continue
-    
-    stats['amount_lookup_count'] = len(amount_lookup)
     
     for idx, row in df_raw.iterrows():
         try:
@@ -394,31 +376,7 @@ def apply_column_mapping(df_raw, column_mapping):
             tc_no = clean_tc_number(tc_no)
             
             # Tutar temizle
-            amount_original = amount
             amount_clean = clean_amount_value(amount)
-            
-            # Debug için örnek tutar bilgisi kaydet
-            if tc_no:
-                # Boş olmayan tutar örnekleri (ilk 5)
-                if len(stats['sample_amounts']) < 5 and amount_clean > 0:
-                    stats['sample_amounts'].append({
-                        'satir': idx + 1,
-                        'ham_tutar': amount_original,
-                        'temiz_tutar': amount_clean
-                    })
-                
-                # Sıfıra dönüşen tutar örnekleri (ilk 3) - debug için
-                if 'sample_zero_amounts' not in stats:
-                    stats['sample_zero_amounts'] = []
-                if len(stats['sample_zero_amounts']) < 3 and amount_clean == 0.0:
-                    stats['sample_zero_amounts'].append({
-                        'satir': idx + 1,
-                        'ham_tutar': amount_original
-                    })
-            
-            # Sıfır tutar sayacı
-            if amount_clean == 0.0 and amount_original not in ['', '0', 'nan', 'NaN', 'None']:
-                stats['zero_amount'] += 1
             
             # Geçerli TC varsa ekle
             if tc_no and len(tc_no) == 11:

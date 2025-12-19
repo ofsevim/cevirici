@@ -134,61 +134,29 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     
-    # İlk yükleme veya skip_rows değişti
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        st.info("💡 Excel'de başlık/logo varsa, atlanacak satır sayısını ayarlayın")
-    
-    with col2:
-        skip_rows_input = st.number_input(
-            "Atlanan satır sayısı",
-            min_value=0,
-            max_value=100,
-            value=st.session_state.skip_rows,
-            step=1,
-            help="Dosyanın başından atlanacak satır sayısı (örn: logo için 12)"
-        )
+    # İlk yükleme ise
+    if st.session_state.raw_df is None:
         
-        # Hızlı seçim butonları
-        quick_skip_col1, quick_skip_col2, quick_skip_col3, quick_skip_col4 = st.columns(4)
-        with quick_skip_col1:
-            if st.button("0 satır", use_container_width=True, key="skip_0"):
-                st.session_state.skip_rows = 0
-                st.rerun()
-        with quick_skip_col2:
-            if st.button("12 satır", use_container_width=True, key="skip_12"):
-                st.session_state.skip_rows = 12
-                st.rerun()
-        with quick_skip_col3:
-            if st.button("20 satır", use_container_width=True, key="skip_20"):
-                st.session_state.skip_rows = 20
-                st.rerun()
-        with quick_skip_col4:
-            if st.button("🤖 Otomatik Bul", use_container_width=True, key="auto_detect"):
-                with st.spinner("Veri satırı tespit ediliyor..."):
-                    uploaded_file.seek(0)
-                    auto_skip = find_data_start_row(uploaded_file)
-                    st.session_state.skip_rows = auto_skip
-                    st.success(f"✅ {auto_skip}. satırdan başlatıldı")
-                    st.rerun()
-    
-    # Eğer skip_rows değişti veya ilk yükleme ise
-    if st.session_state.raw_df is None or skip_rows_input != st.session_state.skip_rows:
-        st.session_state.skip_rows = skip_rows_input
-        
-        # Dosyayı yeniden oku
-        with st.spinner("📂 Dosya okunuyor..."):
+        with st.spinner("📂 Dosya okunuyor ve analiz ediliyor..."):
             try:
-                # Dosya pointer'ını başa al
+                # Önce veri başlangıç satırını otomatik tespit et
                 uploaded_file.seek(0)
-                st.session_state.raw_df = read_file_with_encoding(uploaded_file, skip_rows=skip_rows_input)
+                auto_skip = find_data_start_row(uploaded_file)
+                st.session_state.skip_rows = auto_skip
+                
+                # Dosyayı oku
+                uploaded_file.seek(0)
+                st.session_state.raw_df = read_file_with_encoding(uploaded_file, skip_rows=auto_skip)
                 st.session_state.step = 2
                 
                 # Önceki işlemleri sıfırla
                 st.session_state.clean_df = None
                 
-                st.success(f"✅ Dosya başarıyla yüklendi! ({len(st.session_state.raw_df)} satır, {len(st.session_state.raw_df.columns)} sütun)")
+                if auto_skip > 0:
+                    st.success(f"✅ Dosya yüklendi! (İlk {auto_skip} satır atlandı, {len(st.session_state.raw_df)} veri satırı, {len(st.session_state.raw_df.columns)} sütun)")
+                else:
+                    st.success(f"✅ Dosya yüklendi! ({len(st.session_state.raw_df)} satır, {len(st.session_state.raw_df.columns)} sütun)")
+                    
             except Exception as e:
                 st.error(f"❌ Hata: {e}")
                 st.stop()
@@ -287,42 +255,16 @@ if uploaded_file is not None:
                 with col4:
                     st.metric("🗑️ Boş Satır", stats['empty_rows'])
                 
-                # Tutar debug bilgisi
-                
-                # Ham sütun verileri - debug
-                st.markdown(f"**🔧 Debug: Tutar Sütunu = {stats.get('amount_col_index', '?')} (Geçerli tutar bulunan satır: {stats.get('amount_lookup_count', 0)})**")
-                if stats.get('sample_raw_amounts'):
-                    st.markdown("**📋 Ham Tutar Sütunu Değerleri (İlk 10 satır):**")
-                    for item in stats['sample_raw_amounts']:
-                        st.caption(f"Satır {item['satir']}: `{item['ham']}`")
-                
-                if stats.get('sample_amounts'):
-                    st.markdown("**✅ Başarılı Tutar Dönüşüm Örnekleri:**")
-                    for item in stats['sample_amounts']:
-                        st.caption(f"Satır {item['satir']}: Ham=`{item['ham_tutar']}` → Temiz=`{item['temiz_tutar']}`")
-                else:
-                    st.error("❌ HİÇBİR SATIRDA GEÇERLİ TUTAR BULUNAMADI! Yanlış sütun seçilmiş olabilir.")
-                
-                # Sıfıra dönüşen tutar örnekleri
-                if stats.get('sample_zero_amounts'):
-                    st.markdown("**⚠️ Sıfıra Dönüşen Tutar Örnekleri:**")
-                    for item in stats['sample_zero_amounts']:
-                        st.caption(f"Satır {item['satir']}: Ham değer=`{item['ham_tutar']}`")
-                    
-                    if stats.get('zero_amount', 0) > 0:
-                        st.warning(f"⚠️ Toplam {stats['zero_amount']} satırda tutar sıfıra dönüştürüldü.")
-                
-                # Tutar kayması bilgisi
+                # Tutar kayması bilgisi (önemli)
                 if stats.get('amount_shifted', 0) > 0:
-                    st.success(f"✅ {stats['amount_shifted']} satırda tutar değeri komşu satırdan alındı (Excel merged cell düzeltmesi).")
+                    st.info(f"ℹ️ {stats['amount_shifted']} satırda tutar değeri komşu satırdan alındı.")
                 
-                # Atlanan satır örnekleri
-                if stats['sample_skipped']:
-                    st.markdown("**🔍 Atlanan Satır Örnekleri (İlk 5):**")
-                    for item in stats['sample_skipped']:
-                        st.caption(f"Satır {item['satir']}: TC=`{item['tc']}`, Ad=`{item['ad']}`, Soyad=`{item['soyad']}`")
-                    
-                    st.info("💡 **Tavsiye:** TC Kimlik sütununun doğru seçildiğinden emin olun. 11 haneli olmalı.")
+                # Atlanan satır örnekleri (sadece varsa göster)
+                if stats['sample_skipped'] and stats['invalid_tc'] > 0:
+                    with st.expander(f"🔍 Atlanan {stats['invalid_tc']} Satır Detayları"):
+                        for item in stats['sample_skipped'][:5]:
+                            st.caption(f"Satır {item['satir']}: TC=`{item['tc']}`, Ad=`{item['ad']}`, Soyad=`{item['soyad']}`")
+                        st.caption("💡 TC Kimlik No 11 haneli olmalı.")
         
         # Sonuç gösterimi
         if st.session_state.clean_df is not None and not st.session_state.clean_df.empty:
