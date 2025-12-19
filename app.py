@@ -254,17 +254,6 @@ if uploaded_file is not None:
                 
                 with col4:
                     st.metric("🗑️ Boş Satır", stats['empty_rows'])
-                
-                # Tutar kayması bilgisi (önemli)
-                if stats.get('amount_shifted', 0) > 0:
-                    st.info(f"ℹ️ {stats['amount_shifted']} satırda tutar değeri komşu satırdan alındı.")
-                
-                # Atlanan satır örnekleri (sadece varsa göster)
-                if stats['sample_skipped'] and stats['invalid_tc'] > 0:
-                    with st.expander(f"🔍 Atlanan {stats['invalid_tc']} Satır Detayları"):
-                        for item in stats['sample_skipped'][:5]:
-                            st.caption(f"Satır {item['satir']}: TC=`{item['tc']}`, Ad=`{item['ad']}`, Soyad=`{item['soyad']}`")
-                        st.caption("💡 TC Kimlik No 11 haneli olmalı.")
         
         # Sonuç gösterimi
         if st.session_state.clean_df is not None and not st.session_state.clean_df.empty:

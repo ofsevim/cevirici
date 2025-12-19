@@ -57,19 +57,18 @@ def render_column_mapper(df_sample, required_columns):
         elif non_empty_cells < total_cells * 0.3:
             st.warning(f"⚠️ Verilerin çoğu boş ({non_empty_cells}/{total_cells} dolu). Satır atlama ayarını kontrol edin.")
     
-    # Mevcut sütun listesi (sütun numaraları ile)
-    available_columns = ["-- Seçilmedi --"] + [f"Sütun {i}" for i in range(len(df_sample.columns))]
+    # Sütun seçeneklerini örnek değerlerle oluştur
+    def get_column_label(col_index, df):
+        """Sütun için etiket oluştur (örnek değerlerle)"""
+        values = df[col_index].dropna().head(2).tolist()
+        if values:
+            preview = ", ".join([str(v)[:15] for v in values])
+            return f"Sütun {col_index}: {preview}..."
+        else:
+            return f"Sütun {col_index}: (boş)"
     
-    # Sütun önizleme fonksiyonu
-    def show_column_preview(col_index, df):
-        """Seçilen sütunun ilk 3 değerini göster"""
-        if col_index is not None and col_index < len(df.columns):
-            values = df[col_index].dropna().head(3).tolist()
-            if values:
-                preview = " | ".join([str(v)[:20] for v in values])
-                st.caption(f"📋 Örnek: `{preview}`")
-            else:
-                st.caption("📋 (Boş sütun)")
+    # Mevcut sütun listesi (örnek değerlerle)
+    available_columns = ["-- Seçilmedi --"] + [get_column_label(i, df_sample) for i in range(len(df_sample.columns))]
     
     # Eşleştirme formu
     st.markdown("#### Sütunları Eşleştir")
@@ -86,6 +85,14 @@ def render_column_mapper(df_sample, required_columns):
     else:
         items = list(required_columns.items())
     
+    # Sütun index'ini label'dan çıkaran yardımcı fonksiyon
+    def extract_col_index(label):
+        """'Sütun X: ...' formatından X'i çıkar"""
+        try:
+            return int(label.split(":")[0].split(" ")[1])
+        except:
+            return None
+    
     # İki sütuna bölerek selectbox'ları yerleştir
     mid_point = (len(items) + 1) // 2
     
@@ -98,11 +105,9 @@ def render_column_mapper(df_sample, required_columns):
             )
             
             if selected != "-- Seçilmedi --":
-                col_index = int(selected.split(" ")[1])
-                mapping[internal_key] = col_index
-                show_column_preview(col_index, df_sample)
-            else:
-                st.caption("")  # Boşluk için
+                col_index = extract_col_index(selected)
+                if col_index is not None:
+                    mapping[internal_key] = col_index
     
     with col_right:
         for display_name, internal_key in items[mid_point:]:
@@ -113,11 +118,9 @@ def render_column_mapper(df_sample, required_columns):
             )
             
             if selected != "-- Seçilmedi --":
-                col_index = int(selected.split(" ")[1])
-                mapping[internal_key] = col_index
-                show_column_preview(col_index, df_sample)
-            else:
-                st.caption("")  # Boşluk için
+                col_index = extract_col_index(selected)
+                if col_index is not None:
+                    mapping[internal_key] = col_index
     
     # Otomatik algılama önerisi göster
     with st.expander("💡 Akıllı Öneri", expanded=False):
