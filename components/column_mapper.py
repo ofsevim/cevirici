@@ -202,8 +202,18 @@ def validate_mapping(mapping, required_columns):
     Returns:
         tuple: (is_valid: bool, missing_fields: list)
     """
-    required_keys = set(required_columns.values())
-    mapped_keys = set(mapping.keys())
+    # Birleşik isim modu kontrolü
+    use_combined_name = mapping.get('use_combined_name', False)
+    
+    if use_combined_name:
+        # Birleşik isim modunda first_name ve last_name yerine full_name gerekli
+        required_keys = set(required_columns.values()) - {'first_name', 'last_name'}
+        required_keys.add('full_name')
+    else:
+        required_keys = set(required_columns.values())
+    
+    # use_combined_name'i mapped_keys'den çıkar (çünkü bu bir bool değer, sütun değil)
+    mapped_keys = set(k for k in mapping.keys() if k != 'use_combined_name')
     
     missing = required_keys - mapped_keys
     

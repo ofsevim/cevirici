@@ -222,7 +222,22 @@ if uploaded_file is not None:
         
         with col2:
             if not is_valid:
-                st.warning(f"⚠️ Lütfen tüm alanları eşleştirin. Eksik: {', '.join([k for k, v in required_columns.items() if v in missing_fields])}")
+                # Birleşik isim modunda farklı mesaj göster
+                use_combined = mapping.get('use_combined_name', False)
+                if use_combined:
+                    # full_name için özel kontrol
+                    missing_display = []
+                    for field in missing_fields:
+                        if field == 'full_name':
+                            missing_display.append('Adı Soyadı (Birleşik)')
+                        else:
+                            for k, v in required_columns.items():
+                                if v == field:
+                                    missing_display.append(k)
+                                    break
+                    st.warning(f"⚠️ Lütfen tüm alanları eşleştirin. Eksik: {', '.join(missing_display)}")
+                else:
+                    st.warning(f"⚠️ Lütfen tüm alanları eşleştirin. Eksik: {', '.join([k for k, v in required_columns.items() if v in missing_fields])}")
             else:
                 if st.button("✨ Veriyi İşle ve Temizle", use_container_width=True, type="primary"):
                     st.session_state.column_mapping = mapping
