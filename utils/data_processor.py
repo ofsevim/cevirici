@@ -115,19 +115,56 @@ def clean_amount_value(value):
     Returns:
         float: Temizlenmiş tutar
     """
-    if pd.isna(value) or value == "":
+    if pd.isna(value) or value == "" or value is None:
         return 0.0
     
-    value_str = str(value)
+    value_str = str(value).strip()
+    
+    # Boş string kontrolü
+    if not value_str or value_str in ['None', 'nan', 'NaN', 'null', '-']:
+        return 0.0
     
     # Tırnak işaretlerini temizle
     value_str = value_str.replace('"', '').replace("'", "").strip()
     
-    # Virgülü noktaya çevir
-    value_str = value_str.replace(',', '.')
+    # Para birimi sembollerini temizle
+    value_str = value_str.replace('₺', '').replace('TL', '').replace('TRY', '').strip()
     
-    # Sadece sayı ve nokta bırak
-    value_str = re.sub(r'[^\d.]', '', value_str)
+    # Binlik ayracı ve ondalık ayracı kontrolü
+    # Türkçe format: 1.234,56 -> İngilizce format: 1234.56
+    # İngilizce format: 1,234.56 -> 1234.56
+    
+    has_comma = ',' in value_str
+    has_dot = '.' in value_str
+    
+    if has_comma and has_dot:
+        # Her iki ayraç da var - hangisi ondalık?
+        comma_pos = value_str.rfind(',')
+        dot_pos = value_str.rfind('.')
+        
+        if comma_pos > dot_pos:
+            # Türkçe format: 1.234,56 -> nokta binlik, virgül ondalık
+            value_str = value_str.replace('.', '')  # Binlik ayracını kaldır
+            value_str = value_str.replace(',', '.')  # Ondalık ayracını noktaya çevir
+        else:
+            # İngilizce format: 1,234.56 -> virgül binlik, nokta ondalık
+            value_str = value_str.replace(',', '')  # Binlik ayracını kaldır
+    elif has_comma:
+        # Sadece virgül var - muhtemelen Türkçe ondalık ayracı
+        value_str = value_str.replace(',', '.')
+    # Sadece nokta varsa zaten doğru format
+    
+    # Sadece sayı, nokta ve eksi işareti bırak
+    value_str = re.sub(r'[^\d.\-]', '', value_str)
+    
+    # Birden fazla nokta varsa (örn: 1.234.567) son noktayı ondalık olarak kabul et
+    if value_str.count('.') > 1:
+        parts = value_str.rsplit('.', 1)
+        value_str = parts[0].replace('.', '') + '.' + parts[1]
+    
+    # Boş string kontrolü
+    if not value_str or value_str == '.' or value_str == '-':
+        return 0.0
     
     try:
         return float(value_str)
@@ -210,7 +247,9 @@ def apply_column_mapping(df_raw, column_mapping):
         'skipped_rows': 0,
         'invalid_tc': 0,
         'empty_rows': 0,
-        'sample_skipped': []
+        'zero_amount': 0,
+        'sample_skipped': [],
+        'sample_amounts': []  # Debug için örnek tutar bilgileri
     }
     
     use_combined_name = column_mapping.get('use_combined_name', False)
@@ -258,7 +297,20 @@ def apply_column_mapping(df_raw, column_mapping):
             tc_no = clean_tc_number(tc_no)
             
             # Tutar temizle
+            amount_original = amount
             amount_clean = clean_amount_value(amount)
+            
+            # Debug için örnek tutar bilgisi kaydet (ilk 5)
+            if len(stats['sample_amounts']) < 5 and tc_no:
+                stats['sample_amounts'].append({
+                    'satir': idx + 1,
+                    'ham_tutar': amount_original,
+                    'temiz_tutar': amount_clean
+                })
+            
+            # Sıfır tutar sayacı
+            if amount_clean == 0.0 and amount_original not in ['', '0', 'nan', 'NaN', 'None']:
+                stats['zero_amount'] += 1
             
             # Geçerli TC varsa ekle
             if tc_no and len(tc_no) == 11:

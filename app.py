@@ -287,6 +287,15 @@ if uploaded_file is not None:
                 with col4:
                     st.metric("🗑️ Boş Satır", stats['empty_rows'])
                 
+                # Tutar debug bilgisi
+                if stats.get('sample_amounts'):
+                    st.markdown("**💵 Tutar Dönüşüm Örnekleri (İlk 5):**")
+                    for item in stats['sample_amounts']:
+                        st.caption(f"Satır {item['satir']}: Ham=`{item['ham_tutar']}` → Temiz=`{item['temiz_tutar']}`")
+                    
+                    if stats.get('zero_amount', 0) > 0:
+                        st.warning(f"⚠️ {stats['zero_amount']} satırda tutar sıfıra dönüştürüldü. Doğru sütunu seçtiğinizden emin olun!")
+                
                 # Atlanan satır örnekleri
                 if stats['sample_skipped']:
                     st.markdown("**🔍 Atlanan Satır Örnekleri (İlk 5):**")
