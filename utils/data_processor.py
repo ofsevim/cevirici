@@ -69,7 +69,18 @@ def read_file_with_encoding(uploaded_file, skip_rows=0):
                     # sütun kaymasını otomatik olarak düzeltir
                     data = []
                     for row in ws.iter_rows(min_row=skip_rows + 1, values_only=True):
-                        compacted = [v for v in row if v is not None]
+                        compacted = []
+                        for v in row:
+                            if v is None:
+                                continue
+                            # Float'ları tam sayıya çevir (ondalık kısmı yoksa)
+                            # Örn: 25250132516.0 → 25250132516 (TC Kimlik)
+                            #       287676.0 → 287676 (Üye No)
+                            #       391.19 → 391.19 (Tutar, olduğu gibi kalır)
+                            if isinstance(v, float) and v == int(v) and not (v != v):
+                                compacted.append(int(v))
+                            else:
+                                compacted.append(v)
                         if compacted:  # Tamamen boş satırları atla
                             data.append(compacted)
                     
@@ -264,6 +275,13 @@ def clean_tc_number(value):
         return ""
     
     value_str = str(value).strip()
+    
+    # Float formatını düzelt (örn: '25250132516.0' -> '25250132516')
+    if '.' in value_str:
+        try:
+            value_str = str(int(float(value_str)))
+        except (ValueError, OverflowError):
+            pass
     
     # Sadece rakamları al
     digits = re.sub(r'\D', '', value_str)
