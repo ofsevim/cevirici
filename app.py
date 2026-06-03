@@ -36,6 +36,15 @@ st.markdown("""
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    .main-header img {
+        width: 60px;
+        height: 60px;
+        object-fit: contain;
+        -webkit-text-fill-color: initial;
     }
     .info-box {
         padding: 1.5rem;
@@ -59,7 +68,7 @@ st.markdown("""
 # -----------------------------------------------------------------------------
 # BAŞLIK VE AÇIKLAMA
 # -----------------------------------------------------------------------------
-st.markdown('<h1 class="main-header">📊 Sendika Kesinti Listesi Düzenleyici</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header"><img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen"> Sendika Kesinti Listesi Düzenleyici</h1>', unsafe_allow_html=True)
 
 st.markdown("""
 <div class="info-box">
