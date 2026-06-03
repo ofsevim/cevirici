@@ -403,9 +403,6 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #64748b; padding: 2rem;">
-    <strong>Veri Temizleyici Pro</strong> | Modern • Güvenli • Hızlı<br>
-    <span style="font-size: 0.85rem; margin-top: 0.5rem; display: inline-block;">
-        Alt Geliştirici: <a href="https://omersevim.com.tr" target="_blank" style="color: #3b82f6; text-decoration: none;">Osoft</a>
-    </span>
+    <a href="https://omersevim.com.tr" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">Osoft</a>
 </div>
 """, unsafe_allow_html=True)
