@@ -57,18 +57,35 @@ def render_column_mapper(df_sample, required_columns):
         elif non_empty_cells < total_cells * 0.3:
             st.warning(f"⚠️ Verilerin çoğu boş ({non_empty_cells}/{total_cells} dolu). Satır atlama ayarını kontrol edin.")
     
-    # Sütun seçeneklerini örnek değerlerle oluştur
+    # Sütun seçeneklerini detaylı önizlemeyle oluştur
     def get_column_label(col_index, df):
-        """Sütun için etiket oluştur (örnek değerlerle)"""
-        values = df[col_index].dropna().head(2).tolist()
-        if values:
-            preview = ", ".join([str(v)[:15] for v in values])
-            return f"Sütun {col_index}: {preview}..."
+        """Sütun için detaylı etiket oluştur (benzersiz örnek değerlerle)"""
+        values = df[col_index].dropna().astype(str)
+        # 'None', 'nan' gibi sahte değerleri filtrele
+        values = values[~values.isin(['None', 'nan', 'NaN', ''])]
+        unique_vals = values.unique()[:5]  # İlk 5 benzersiz değer
+        
+        if len(unique_vals) > 0:
+            preview = ", ".join([str(v)[:20] for v in unique_vals])
+            return f"Sütun {col_index}: {preview}"
         else:
             return f"Sütun {col_index}: (boş)"
     
-    # Mevcut sütun listesi (örnek değerlerle)
-    available_columns = ["-- Seçilmedi --"] + [get_column_label(i, df_sample) for i in range(len(df_sample.columns))]
+    # Çoğunluğu boş olan sütunları filtrele (toplam satırın %10'undan az doluysa gizle)
+    min_fill_count = max(1, len(df_sample) * 0.10)
+    valid_col_indices = []
+    for i in range(len(df_sample.columns)):
+        non_null = df_sample[i].dropna()
+        # 'None', 'nan' gibi sahte değerleri de say
+        real_values = non_null[~non_null.astype(str).isin(['None', 'nan', 'NaN', ''])]
+        if len(real_values) >= min_fill_count:
+            valid_col_indices.append(i)
+    
+    # Mevcut sütun listesi (örnek değerlerle, boş sütunlar filtrelenmiş)
+    available_columns = ["-- Seçilmedi --"] + [get_column_label(i, df_sample) for i in valid_col_indices]
+    
+    # Otomatik öneri hesapla
+    suggestions = auto_suggest_columns(df_sample, required_columns, use_combined_name)
     
     # Eşleştirme formu
     st.markdown("#### Sütunları Eşleştir")
@@ -93,14 +110,27 @@ def render_column_mapper(df_sample, required_columns):
         except:
             return None
     
+    # Öneri sütun index'ini selectbox label'ına çeviren yardımcı
+    def find_default_index(internal_key, available_cols, suggestions):
+        """Otomatik öneri sonucuna göre selectbox'ın varsayılan index'ini bul"""
+        if internal_key in suggestions:
+            suggested_col = suggestions[internal_key]
+            target_prefix = f"Sütun {suggested_col}:"
+            for idx, label in enumerate(available_cols):
+                if label.startswith(target_prefix):
+                    return idx
+        return 0  # "-- Seçilmedi --"
+    
     # İki sütuna bölerek selectbox'ları yerleştir
     mid_point = (len(items) + 1) // 2
     
     with col_left:
         for display_name, internal_key in items[:mid_point]:
+            default_idx = find_default_index(internal_key, available_columns, suggestions)
             selected = st.selectbox(
                 f"**{display_name}** için sütun seç:",
                 options=available_columns,
+                index=default_idx,
                 key=f"map_{internal_key}",
             )
             
@@ -111,9 +141,11 @@ def render_column_mapper(df_sample, required_columns):
     
     with col_right:
         for display_name, internal_key in items[mid_point:]:
+            default_idx = find_default_index(internal_key, available_columns, suggestions)
             selected = st.selectbox(
                 f"**{display_name}** için sütun seç:",
                 options=available_columns,
+                index=default_idx,
                 key=f"map_{internal_key}",
             )
             
