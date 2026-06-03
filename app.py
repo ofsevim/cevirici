@@ -35,7 +35,8 @@ st.markdown("""
         background: linear-gradient(120deg, #2563eb 0%, #7c3aed 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 1rem;
+        margin-bottom: 0.25rem;
+        margin-top: 0;
         display: flex;
         align-items: center;
         gap: 1rem;
@@ -47,11 +48,11 @@ st.markdown("""
         -webkit-text-fill-color: initial;
     }
     .info-box {
-        padding: 1.5rem;
+        padding: 1rem;
         border-radius: 0.5rem;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
     }
     .step-badge {
         display: inline-block;
@@ -61,6 +62,12 @@ st.markdown("""
         color: white;
         font-weight: 600;
         margin-bottom: 0.5rem;
+    }
+    .block-container {
+        padding-top: 1rem !important;
+    }
+    .element-container {
+        margin-bottom: 0.25rem;
     }
 </style>
 """, unsafe_allow_html=True)
