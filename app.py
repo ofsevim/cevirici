@@ -134,7 +134,7 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 # ADIM 1: DOSYA YÜKLEME (Özellikler kutusu ile yan yana)
 # -----------------------------------------------------------------------------
-col_upload, col_info = st.columns([1, 1])
+col_upload, col_info = st.columns([1, 1], vertical_alignment="bottom")
 
 with col_upload:
     st.markdown('<span class="step-badge">Adım 1</span>', unsafe_allow_html=True)
