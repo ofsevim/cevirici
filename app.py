@@ -75,18 +75,19 @@ st.markdown("""
 # -----------------------------------------------------------------------------
 # BAŞLIK VE AÇIKLAMA
 # -----------------------------------------------------------------------------
-st.markdown('<h1 class="main-header"><img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen"> Sendika Kesinti Listesi Düzenleyici</h1>', unsafe_allow_html=True)
-
-col_header_left, col_header_right = st.columns([1, 1])
-
-with col_header_right:
-    st.markdown("""
-<div class="info-box">
-    <strong>✨ Özellikler:</strong><br>
-    • Sütun eşleştirme ile esnek veri işleme<br>
-    • Otomatik Türkçe karakter düzeltme<br>
-    • Excel/CSV/TXT format desteği<br>
-    • Akıllı sütun algılama ve öneri sistemi
+st.markdown("""
+<div style="display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+    <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 300px;">
+        <img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen" style="width: 180px; height: 180px; object-fit: contain;">
+        <h1 class="main-header" style="margin: 0;">Sendika Kesinti Listesi Düzenleyici</h1>
+    </div>
+    <div class="info-box" style="flex: 1; min-width: 280px; margin-bottom: 0;">
+        <strong>✨ Özellikler:</strong><br>
+        • Sütun eşleştirme ile esnek veri işleme<br>
+        • Otomatik Türkçe karakter düzeltme<br>
+        • Excel/CSV/TXT format desteği<br>
+        • Akıllı sütun algılama ve öneri sistemi
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
