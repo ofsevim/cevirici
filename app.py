@@ -29,6 +29,18 @@ st.set_page_config(
 # Modern CSS
 st.markdown("""
 <style>
+    .header-container {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .header-logo {
+        width: 180px;
+        height: 180px;
+        object-fit: contain;
+    }
     .main-header {
         font-size: 2.5rem;
         font-weight: 700;
@@ -37,15 +49,20 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         margin-bottom: 0.25rem;
         margin-top: 0;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
     }
-    .main-header img {
-        width: 180px;
-        height: 180px;
-        object-fit: contain;
-        -webkit-text-fill-color: initial;
+    @media (max-width: 768px) {
+        .header-container {
+            flex-direction: column;
+            text-align: center;
+            justify-content: center;
+        }
+        .header-logo {
+            width: 100px;
+            height: 100px;
+        }
+        .main-header {
+            font-size: 1.75rem;
+        }
     }
     .info-box {
         padding: 1rem;
@@ -76,8 +93,8 @@ st.markdown("""
 # BAŞLIK VE AÇIKLAMA
 # -----------------------------------------------------------------------------
 st.markdown("""
-<div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
-    <img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen" style="width: 180px; height: 180px; object-fit: contain;">
+<div class="header-container">
+    <img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen" class="header-logo">
     <h1 class="main-header" style="margin: 0;">Sendika Kesinti Listesi Düzenleyici</h1>
 </div>
 """, unsafe_allow_html=True)
