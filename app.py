@@ -134,7 +134,16 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 # ADIM 1: DOSYA YÜKLEME (Özellikler kutusu ile yan yana)
 # -----------------------------------------------------------------------------
-col_info, col_upload = st.columns([1, 1])
+col_upload, col_info = st.columns([1, 1])
+
+with col_upload:
+    st.markdown('<span class="step-badge">Adım 1</span>', unsafe_allow_html=True)
+    st.markdown("### 📁 Dosya Yükleme")
+    uploaded_file = st.file_uploader(
+        "CSV, Excel veya TXT dosyanızı seçin",
+        type=["csv", "xlsx", "txt", "xls"],
+        help="Desteklenen formatlar: .csv, .xlsx, .xls, .txt"
+    )
 
 with col_info:
     st.markdown("""
@@ -146,15 +155,6 @@ with col_info:
     • Akıllı sütun algılama ve öneri sistemi
 </div>
 """, unsafe_allow_html=True)
-
-with col_upload:
-    st.markdown('<span class="step-badge">Adım 1</span>', unsafe_allow_html=True)
-    st.markdown("### 📁 Dosya Yükleme")
-    uploaded_file = st.file_uploader(
-        "CSV, Excel veya TXT dosyanızı seçin",
-        type=["csv", "xlsx", "txt", "xls"],
-        help="Desteklenen formatlar: .csv, .xlsx, .xls, .txt"
-    )
 
 if uploaded_file is not None:
     
