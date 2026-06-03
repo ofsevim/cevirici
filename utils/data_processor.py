@@ -60,27 +60,24 @@ def read_file_with_encoding(uploaded_file, skip_rows=0):
                     wb = load_workbook(BytesIO(uploaded_file.read()), data_only=True)
                     ws = wb.active
                     
-                    # Merged cell aralıklarını kaydet
-                    merged_ranges = list(ws.merged_cells.ranges)
-                    
-                    # Merged cell'leri unmerge et ve değerleri yay
-                    for merged_range in merged_ranges:
-                        # Merged aralığın ilk hücresindeki değeri al
-                        top_left_cell = ws.cell(merged_range.min_row, merged_range.min_col)
-                        top_left_value = top_left_cell.value
-                        
-                        # Önce unmerge et
+                    # Merged cell'leri çöz (değerler sadece sol üst hücrede kalır)
+                    for merged_range in list(ws.merged_cells.ranges):
                         ws.unmerge_cells(str(merged_range))
-                        
-                        # Tüm hücrelere aynı değeri yaz
-                        for row in range(merged_range.min_row, merged_range.max_row + 1):
-                            for col in range(merged_range.min_col, merged_range.max_col + 1):
-                                ws.cell(row, col, top_left_value)
                     
-                    # DataFrame'e dönüştür
+                    # Her satırı oku ve None boşluklarını kaldırarak sola kaydır
+                    # Bu, birden fazla dikey "sayfa" içeren Excel dosyalarında
+                    # sütun kaymasını otomatik olarak düzeltir
                     data = []
                     for row in ws.iter_rows(min_row=skip_rows + 1, values_only=True):
-                        data.append(list(row))
+                        compacted = [v for v in row if v is not None]
+                        if compacted:  # Tamamen boş satırları atla
+                            data.append(compacted)
+                    
+                    # Tüm satırları aynı uzunluğa getir (en uzun satıra göre)
+                    max_cols = max((len(r) for r in data), default=0)
+                    for row in data:
+                        while len(row) < max_cols:
+                            row.append(None)
                     
                     df = pd.DataFrame(data, dtype=str)
                     
