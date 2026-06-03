@@ -72,9 +72,10 @@ def read_file_with_encoding(uploaded_file, skip_rows=0):
                         # Önce unmerge et
                         ws.unmerge_cells(str(merged_range))
                         
-                        # Yatayda kopyalama yapmamak için sadece ilk sütuna (min_col), tüm satırlar için değeri yaz
+                        # Tüm hücrelere aynı değeri yaz
                         for row in range(merged_range.min_row, merged_range.max_row + 1):
-                            ws.cell(row, merged_range.min_col, top_left_value)
+                            for col in range(merged_range.min_col, merged_range.max_col + 1):
+                                ws.cell(row, col, top_left_value)
                     
                     # DataFrame'e dönüştür
                     data = []
