@@ -76,18 +76,9 @@ st.markdown("""
 # BAŞLIK VE AÇIKLAMA
 # -----------------------------------------------------------------------------
 st.markdown("""
-<div style="display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
-    <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 300px;">
-        <img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen" style="width: 180px; height: 180px; object-fit: contain;">
-        <h1 class="main-header" style="margin: 0;">Sendika Kesinti Listesi Düzenleyici</h1>
-    </div>
-    <div class="info-box" style="flex: 1; min-width: 280px; margin-bottom: 0;">
-        <strong>✨ Özellikler:</strong><br>
-        • Sütun eşleştirme ile esnek veri işleme<br>
-        • Otomatik Türkçe karakter düzeltme<br>
-        • Excel/CSV/TXT format desteği<br>
-        • Akıllı sütun algılama ve öneri sistemi
-    </div>
+<div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+    <img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen" style="width: 180px; height: 180px; object-fit: contain;">
+    <h1 class="main-header" style="margin: 0;">Sendika Kesinti Listesi Düzenleyici</h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -141,16 +132,29 @@ with st.sidebar:
     st.caption("Akıllı öneri sistemini kullanarak sütunları otomatik eşleştirebilirsiniz.")
 
 # -----------------------------------------------------------------------------
-# ADIM 1: DOSYA YÜKLEME
+# ADIM 1: DOSYA YÜKLEME (Özellikler kutusu ile yan yana)
 # -----------------------------------------------------------------------------
-st.markdown('<span class="step-badge">Adım 1</span>', unsafe_allow_html=True)
-st.markdown("### 📁 Dosya Yükleme")
+col_info, col_upload = st.columns([1, 1])
 
-uploaded_file = st.file_uploader(
-    "CSV, Excel veya TXT dosyanızı seçin",
-    type=["csv", "xlsx", "txt", "xls"],
-    help="Desteklenen formatlar: .csv, .xlsx, .xls, .txt"
-)
+with col_info:
+    st.markdown("""
+<div class="info-box">
+    <strong>✨ Özellikler:</strong><br>
+    • Sütun eşleştirme ile esnek veri işleme<br>
+    • Otomatik Türkçe karakter düzeltme<br>
+    • Excel/CSV/TXT format desteği<br>
+    • Akıllı sütun algılama ve öneri sistemi
+</div>
+""", unsafe_allow_html=True)
+
+with col_upload:
+    st.markdown('<span class="step-badge">Adım 1</span>', unsafe_allow_html=True)
+    st.markdown("### 📁 Dosya Yükleme")
+    uploaded_file = st.file_uploader(
+        "CSV, Excel veya TXT dosyanızı seçin",
+        type=["csv", "xlsx", "txt", "xls"],
+        help="Desteklenen formatlar: .csv, .xlsx, .xls, .txt"
+    )
 
 if uploaded_file is not None:
     
