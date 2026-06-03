@@ -77,7 +77,10 @@ st.markdown("""
 # -----------------------------------------------------------------------------
 st.markdown('<h1 class="main-header"><img src="https://buromemursen.org.tr/uploads/logo.gif" alt="Büro Memur-Sen"> Sendika Kesinti Listesi Düzenleyici</h1>', unsafe_allow_html=True)
 
-st.markdown("""
+col_header_left, col_header_right = st.columns([1, 1])
+
+with col_header_right:
+    st.markdown("""
 <div class="info-box">
     <strong>✨ Özellikler:</strong><br>
     • Sütun eşleştirme ile esnek veri işleme<br>
