@@ -60,29 +60,51 @@ def read_file_with_encoding(uploaded_file, skip_rows=0):
                     wb = load_workbook(BytesIO(uploaded_file.read()), data_only=True)
                     ws = wb.active
                     
+                    # Merged cell kontrolü
+                    merged_ranges = list(ws.merged_cells.ranges)
+                    has_merged = len(merged_ranges) > 0
+                    
                     # Merged cell'leri çöz (değerler sadece sol üst hücrede kalır)
-                    for merged_range in list(ws.merged_cells.ranges):
+                    for merged_range in merged_ranges:
                         ws.unmerge_cells(str(merged_range))
                     
-                    # Her satırı oku ve None boşluklarını kaldırarak sola kaydır
-                    # Bu, birden fazla dikey "sayfa" içeren Excel dosyalarında
-                    # sütun kaymasını otomatik olarak düzeltir
                     data = []
                     for row in ws.iter_rows(min_row=skip_rows + 1, values_only=True):
-                        compacted = []
-                        for v in row:
-                            if v is None:
-                                continue
-                            # Float'ları tam sayıya çevir (ondalık kısmı yoksa)
-                            # Örn: 25250132516.0 → 25250132516 (TC Kimlik)
-                            #       287676.0 → 287676 (Üye No)
-                            #       391.19 → 391.19 (Tutar, olduğu gibi kalır)
-                            if isinstance(v, float) and v == int(v) and not (v != v):
-                                compacted.append(int(v))
-                            else:
-                                compacted.append(v)
-                        if compacted:  # Tamamen boş satırları atla
+                        if has_merged:
+                            # Birleşik hücreli dosyalarda: None boşluklarını
+                            # kaldırarak sola kaydır (shift-left)
+                            # Bu, çok sayfalı Excel'lerde sütun kaymasını düzeltir
+                            compacted = []
+                            for v in row:
+                                if v is None:
+                                    continue
+                                # Float'ları tam sayıya çevir (ondalık kısmı yoksa)
+                                if isinstance(v, float) and v == int(v) and v == v:
+                                    compacted.append(int(v))
+                                else:
+                                    compacted.append(v)
+                        else:
+                            # Birleşik hücre yoksa: orijinal yapıyı koru
+                            # Sadece float→int dönüşümü yap
+                            compacted = []
+                            for v in row:
+                                if v is not None and isinstance(v, float) and v == int(v) and v == v:
+                                    compacted.append(int(v))
+                                else:
+                                    compacted.append(v)
+                        
+                        # Tamamen boş satırları atla
+                        if any(v is not None for v in compacted):
                             data.append(compacted)
+                    
+                    # Birleşik hücreli dosyalarda: tekrarlanan başlık/metadata
+                    # satırlarını otomatik filtrele (veri satırlarından kısa olanlar)
+                    if has_merged and data:
+                        from collections import Counter
+                        lengths = Counter(len(r) for r in data)
+                        expected_length = lengths.most_common(1)[0][0]
+                        min_length = max(expected_length // 2, 3)
+                        data = [r for r in data if len(r) >= min_length]
                     
                     # Tüm satırları aynı uzunluğa getir (en uzun satıra göre)
                     max_cols = max((len(r) for r in data), default=0)
@@ -101,6 +123,18 @@ def read_file_with_encoding(uploaded_file, skip_rows=0):
             else:
                 # .xls dosyaları için normal okuma
                 df = pd.read_excel(uploaded_file, header=None, dtype=str, skiprows=skip_rows)
+                
+                # xls dosyalarında da birleşik hücre kayması olabilir
+                # Çok sayıda boş sütun varsa shift-left uygula
+                empty_ratio = df.isna().mean().mean()
+                if empty_ratio > 0.5:
+                    df = df.apply(lambda x: pd.Series(x.dropna().values), axis=1)
+                    # Kısa satırları filtrele (başlık/metadata)
+                    row_lengths = df.notna().sum(axis=1)
+                    if len(row_lengths) > 0 and not row_lengths.mode().empty:
+                        expected = int(row_lengths.mode().iloc[0])
+                        min_len = max(expected // 2, 3)
+                        df = df[row_lengths >= min_len].reset_index(drop=True)
             
             # None değerlerini NaN'a çevir (openpyxl'den gelen)
             df = df.replace(['None', 'none', ''], pd.NA)
