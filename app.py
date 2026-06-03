@@ -41,8 +41,8 @@ st.markdown("""
         gap: 1rem;
     }
     .main-header img {
-        width: 120px;
-        height: 120px;
+        width: 180px;
+        height: 180px;
         object-fit: contain;
         -webkit-text-fill-color: initial;
     }
