@@ -368,7 +368,7 @@ def apply_column_mapping(df_raw, column_mapping):
                     cleaned = clean_amount_value(amount_val)
                     if cleaned > 0:
                         amount_lookup[idx] = amount_val
-            except:
+            except Exception:
                 continue
     
     for idx, row in df_raw.iterrows():
@@ -447,7 +447,7 @@ def apply_column_mapping(df_raw, column_mapping):
                         'soyad': last_name
                     })
         
-        except Exception as e:
+        except Exception:
             stats['skipped_rows'] += 1
             continue
     

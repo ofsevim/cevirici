@@ -12,7 +12,6 @@ from components.column_mapper import render_column_mapper, validate_mapping
 from utils.data_processor import (
     read_file_with_encoding,
     apply_column_mapping,
-    detect_file_structure,
     find_data_start_row
 )
 
@@ -296,6 +295,29 @@ if uploaded_file is not None:
             with col4:
                 unique_members = st.session_state.clean_df['TC Kimlik No'].nunique()
                 st.metric("👥 Benzersiz Üye", unique_members)
+            
+            # İşlem istatistikleri (varsa)
+            if hasattr(st.session_state, 'processing_stats') and st.session_state.processing_stats:
+                p_stats = st.session_state.processing_stats
+                warnings = []
+                if p_stats.get('invalid_tc', 0) > 0:
+                    warnings.append(f"⚠️ **{p_stats['invalid_tc']}** satır geçersiz TC nedeniyle atlandı")
+                if p_stats.get('skipped_rows', 0) > 0:
+                    warnings.append(f"⚠️ **{p_stats['skipped_rows']}** satır hata nedeniyle atlandı")
+                if p_stats.get('empty_rows', 0) > 0:
+                    warnings.append(f"ℹ️ **{p_stats['empty_rows']}** boş satır atlandı")
+                if p_stats.get('amount_shifted', 0) > 0:
+                    warnings.append(f"🔄 **{p_stats['amount_shifted']}** satırda tutar komşu satırdan alındı")
+                
+                if warnings:
+                    with st.expander("📊 İşlem Detayları", expanded=False):
+                        for w in warnings:
+                            st.markdown(w)
+                        
+                        if p_stats.get('sample_skipped'):
+                            st.markdown("**Atlanan satır örnekleri:**")
+                            for s in p_stats['sample_skipped']:
+                                st.caption(f"Satır {s['satir']}: TC={s['tc']}, Ad={s['ad']}, Soyad={s['soyad']}")
             
             st.markdown("---")
             
